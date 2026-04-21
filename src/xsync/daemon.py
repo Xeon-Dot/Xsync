@@ -262,6 +262,7 @@ def run_daemon_loop(
                     cfg = load_config(config_dir)
                     mirror.last_sync = datetime.now(tz=timezone.utc)
                     mirror.last_status = result.status
+                    mirror.last_size = result.size_bytes
                     cfg.mirrors[mirror.name] = mirror
                     save_config(cfg, config_dir)
 

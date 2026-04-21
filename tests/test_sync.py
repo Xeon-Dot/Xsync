@@ -75,6 +75,7 @@ class TestSyncMirror:
             result = sync_mirror(rsync_mirror, tmp_path / "logs", dry_run=True)
         assert result.status == SyncStatus.PENDING
         assert result.mirror_name == "ubuntu"
+        assert result.size_bytes is None
 
     def test_successful_sync(self, rsync_mirror, tmp_path):
         mock_result = MagicMock()
@@ -87,6 +88,7 @@ class TestSyncMirror:
         assert result.status == SyncStatus.SUCCESS
         assert result.error is None
         assert result.duration_seconds >= 0
+        assert result.size_bytes == 0  # local_path does not exist in test
 
     def test_failed_sync(self, rsync_mirror, tmp_path):
         mock_result = MagicMock()
@@ -98,6 +100,7 @@ class TestSyncMirror:
             result = sync_mirror(rsync_mirror, tmp_path / "logs")
         assert result.status == SyncStatus.FAILED
         assert "23" in result.error  # ty:ignore[unsupported-operator]  # pyright: ignore[reportOperatorIssue]
+        assert result.size_bytes is None
 
     def test_command_not_found(self, rsync_mirror, tmp_path):
         with patch("xsync.sync.shutil.which", return_value=None):

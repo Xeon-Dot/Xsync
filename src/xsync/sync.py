@@ -28,12 +28,14 @@ class SyncResult:
         duration_seconds: float = 0.0,
         log_path: Optional[Path] = None,
         error: Optional[str] = None,
+        size_bytes: Optional[int] = None,
     ) -> None:
         self.mirror_name = mirror_name
         self.status = status
         self.duration_seconds = duration_seconds
         self.log_path = log_path
         self.error = error
+        self.size_bytes = size_bytes
 
     def __repr__(self) -> str:
         return (
@@ -136,12 +138,17 @@ def sync_mirror(
             f"\n# Finished: {end.isoformat()}  Duration: {duration:.1f}s  Status: {status.value}\n"  # noqa: E501
         )
 
+    size_bytes = None
+    if status == SyncStatus.SUCCESS:
+        size_bytes = get_directory_size(mirror.local_path)
+
     return SyncResult(
         mirror_name=mirror.name,
         status=status,
         duration_seconds=duration,
         log_path=log_path,
         error=error_msg,
+        size_bytes=size_bytes,
     )
 
 
@@ -257,6 +264,20 @@ def _build_wget_command(mirror: Mirror) -> list[str]:
     ] + list(mirror.http_options)
     cmd.append(mirror.url)
     return cmd
+
+
+def get_directory_size(path: str) -> int:
+    """Calculate total size of a directory in bytes."""
+    total = 0
+    try:
+        p = Path(path)
+        if p.exists():
+            for entry in p.rglob("*"):
+                if entry.is_file():
+                    total += entry.stat().st_size
+    except (OSError, PermissionError):
+        pass
+    return total
 
 
 def purge_old_logs(log_dir: Path, mirror_name: str, max_files: int) -> int:

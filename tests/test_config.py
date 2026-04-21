@@ -125,3 +125,15 @@ class TestLoadSaveConfig:
         assert dc.webhook_url is None
         assert dc.notify_on_success is True
         assert dc.notify_on_failure is True
+
+    def test_last_size_roundtrip(self, tmp_config_dir):
+        cfg = XsyncConfig()
+        cfg.mirrors["ubuntu"] = Mirror(
+            name="ubuntu",
+            url="rsync://mirror.example.com/ubuntu",
+            local_path="/srv/mirrors/ubuntu",
+        )
+        cfg.mirrors["ubuntu"].last_size = 12345678
+        save_config(cfg, tmp_config_dir)
+        loaded = load_config(tmp_config_dir)
+        assert loaded.mirrors["ubuntu"].last_size == 12345678

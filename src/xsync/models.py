@@ -49,6 +49,7 @@ class Mirror(BaseModel):
     )
     last_sync: Optional[datetime] = Field(None, description="Timestamp of last sync")
     last_status: SyncStatus = Field(SyncStatus.NEVER, description="Last sync result")
+    last_size: Optional[int] = Field(None, description="Size in bytes of the local mirror after last successful sync")
 
     @field_validator("name")
     @classmethod

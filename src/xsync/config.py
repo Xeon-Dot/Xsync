@@ -107,6 +107,8 @@ def _serialise(cfg: XsyncConfig) -> dict:
         if mirror.last_sync is not None:
             entry["last_sync"] = mirror.last_sync.isoformat()
         entry["last_status"] = mirror.last_status.value
+        if mirror.last_size is not None:
+            entry["last_size"] = mirror.last_size
         data["mirrors"][name] = entry
     return data
 
@@ -165,6 +167,7 @@ def _parse_raw(raw: dict) -> XsyncConfig:
             bandwidth_limit=mraw.get("bandwidth_limit"),
             last_sync=last_sync,
             last_status=mraw.get("last_status", "never"),
+            last_size=mraw.get("last_size"),
         )
 
     return XsyncConfig(

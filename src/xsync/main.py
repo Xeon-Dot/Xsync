@@ -372,9 +372,10 @@ def sync(
                 rprint(f"  [red]Could not build command:[/red] {exc}")
             continue
 
-        # Update mirror timestamps / status
+        # Update mirror timestamps / status / size
         mirror.last_sync = datetime.now(tz=timezone.utc)
         mirror.last_status = result.status
+        mirror.last_size = result.size_bytes
         cfg.mirrors[mirror.name] = mirror
         save_config(cfg, config_dir)
 

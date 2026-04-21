@@ -50,6 +50,7 @@ class MirrorStatusResponse(BaseModel):
     enabled: bool
     status: str
     last_sync: Optional[str] = None
+    last_size: Optional[int] = None
     size_bytes: int = 0
     size_human: str = "0 B"
 
@@ -75,13 +76,14 @@ async def get_status() -> StatusResponse:
 
     mirrors_status: list[MirrorStatusResponse] = []
     for name, mirror in cfg.mirrors.items():
-        size_bytes = get_directory_size(mirror.local_path)
+        size_bytes = mirror.last_size if mirror.last_size is not None else 0
         mirrors_status.append(
             MirrorStatusResponse(
                 name=name,
                 enabled=mirror.enabled,
                 status=mirror.last_status.value,
                 last_sync=mirror.last_sync.isoformat() if mirror.last_sync else None,
+                last_size=mirror.last_size,
                 size_bytes=size_bytes,
                 size_human=format_size(size_bytes),
             )
@@ -118,13 +120,14 @@ async def get_mirror_status(name: str):
         )
 
     mirror = cfg.mirrors[name]
-    size_bytes = get_directory_size(mirror.local_path)
+    size_bytes = mirror.last_size if mirror.last_size is not None else 0
 
     return MirrorStatusResponse(
         name=name,
         enabled=mirror.enabled,
         status=mirror.last_status.value,
         last_sync=mirror.last_sync.isoformat() if mirror.last_sync else None,
+        last_size=mirror.last_size,
         size_bytes=size_bytes,
         size_human=format_size(size_bytes),
     )
@@ -142,7 +145,7 @@ async def get_mirror_size(name: str):
         )
 
     mirror = cfg.mirrors[name]
-    size_bytes = get_directory_size(mirror.local_path)
+    size_bytes = mirror.last_size if mirror.last_size is not None else 0
 
     return {
         "name": name,

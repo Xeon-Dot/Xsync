@@ -61,6 +61,14 @@ class TestMirror:
         assert "-avz" in m.rsync_options
         assert "--delete" in m.rsync_options
 
+    def test_default_last_size_is_none(self):
+        m = Mirror(
+            name="arch",
+            url="rsync://mirror.example.com/arch",
+            local_path="/srv/mirrors/arch",
+        )
+        assert m.last_size is None
+
 
 class TestXsyncConfig:
     def test_default_config(self):
