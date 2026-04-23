@@ -72,6 +72,7 @@ def _serialise(cfg: XsyncConfig) -> dict:
             "daemon_interval": cfg.global_config.daemon_interval,
             "api_enabled": cfg.global_config.api_enabled,
             "api_port": cfg.global_config.api_port,
+            "daemon_schedule": cfg.global_config.daemon_schedule or "",
             "telegram": {
                 "bot_token": cfg.global_config.telegram.bot_token or "",
                 "chat_id": cfg.global_config.telegram.chat_id or "",
@@ -109,6 +110,8 @@ def _serialise(cfg: XsyncConfig) -> dict:
         entry["last_status"] = mirror.last_status.value
         if mirror.last_size is not None:
             entry["last_size"] = mirror.last_size
+        if mirror.previous_size is not None:
+            entry["previous_size"] = mirror.previous_size
         data["mirrors"][name] = entry
     return data
 
@@ -145,6 +148,7 @@ def _parse_raw(raw: dict) -> XsyncConfig:
         daemon_interval=global_raw.get("daemon_interval", 3600),
         api_enabled=global_raw.get("api_enabled", False),
         api_port=global_raw.get("api_port", 58080),
+        daemon_schedule=global_raw.get("daemon_schedule") or None,
         telegram=telegram,
         discord=discord,
     )
@@ -168,6 +172,7 @@ def _parse_raw(raw: dict) -> XsyncConfig:
             last_sync=last_sync,
             last_status=mraw.get("last_status", "never"),
             last_size=mraw.get("last_size"),
+            previous_size=mraw.get("previous_size"),
         )
 
     return XsyncConfig(

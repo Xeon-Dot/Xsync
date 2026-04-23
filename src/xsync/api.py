@@ -57,6 +57,7 @@ class MirrorStatusResponse(BaseModel):
 
 class StatusResponse(BaseModel):
     daemon_running: bool = False
+    current_mirror: Optional[str] = None
     mirrors: list[MirrorStatusResponse] = []
 
 
@@ -77,11 +78,12 @@ async def get_status() -> StatusResponse:
     mirrors_status: list[MirrorStatusResponse] = []
     for name, mirror in cfg.mirrors.items():
         size_bytes = mirror.last_size if mirror.last_size is not None else 0
+        live_status = get_sync_status(name).value
         mirrors_status.append(
             MirrorStatusResponse(
                 name=name,
                 enabled=mirror.enabled,
-                status=mirror.last_status.value,
+                status=live_status,
                 last_sync=mirror.last_sync.isoformat() if mirror.last_sync else None,
                 last_size=mirror.last_size,
                 size_bytes=size_bytes,
@@ -96,6 +98,7 @@ async def get_status() -> StatusResponse:
 
     return StatusResponse(
         daemon_running=daemon_running,
+        current_mirror=get_current_mirror(),
         mirrors=mirrors_status,
     )
 
@@ -121,11 +124,12 @@ async def get_mirror_status(name: str):
 
     mirror = cfg.mirrors[name]
     size_bytes = mirror.last_size if mirror.last_size is not None else 0
+    live_status = get_sync_status(name).value
 
     return MirrorStatusResponse(
         name=name,
         enabled=mirror.enabled,
-        status=mirror.last_status.value,
+        status=live_status,
         last_sync=mirror.last_sync.isoformat() if mirror.last_sync else None,
         last_size=mirror.last_size,
         size_bytes=size_bytes,

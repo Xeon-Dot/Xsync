@@ -50,6 +50,7 @@ class Mirror(BaseModel):
     last_sync: Optional[datetime] = Field(None, description="Timestamp of last sync")
     last_status: SyncStatus = Field(SyncStatus.NEVER, description="Last sync result")
     last_size: Optional[int] = Field(None, description="Size in bytes of the local mirror after last successful sync")
+    previous_size: Optional[int] = Field(None, description="Size in bytes from the previous successful sync (for trend display)")
 
     @field_validator("name")
     @classmethod
@@ -135,6 +136,9 @@ class GlobalConfig(BaseModel):
         False, description="Enable API server when daemon starts (default: False)"
     )
     api_port: int = Field(58080, description="API server port (default: 58080)")
+    daemon_schedule: Optional[str] = Field(
+        None, description="Cron expression for daemon scheduling (e.g. '0 2 * * *')"
+    )
     telegram: TelegramConfig = Field(
         default_factory=TelegramConfig, description="Telegram notification settings"
     )

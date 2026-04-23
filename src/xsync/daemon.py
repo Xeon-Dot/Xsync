@@ -7,6 +7,7 @@ import os
 import signal
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from types import FrameType
@@ -138,6 +139,15 @@ def _log(msg: str) -> None:
     print(f"[{datetime.now(tz=timezone.utc).isoformat()}] {msg}", flush=True)
 
 
+def _sleep_interruptible(seconds: float, running: list[bool]) -> None:
+    """Sleep for *seconds*, checking *running* every 5 s."""
+    elapsed = 0.0
+    while running[0] and elapsed < seconds:
+        step = min(5, seconds - elapsed)
+        time.sleep(step)
+        elapsed += step
+
+
 def run_daemon_loop(
     config_dir: Path,
     names: Optional[list[str]],
@@ -150,7 +160,7 @@ def run_daemon_loop(
     Args:
         config_dir: Xsync configuration directory (resolved absolute path).
         names: Mirror names to sync.  ``None`` means *all enabled* mirrors.
-        interval: Seconds to wait between sync cycles.
+        interval: Seconds to wait between sync cycles (fallback when no cron).
         api_enabled: If True, start the API server in a background thread.
         api_port: Port for the API server.
     """
@@ -164,6 +174,7 @@ def run_daemon_loop(
     )
     from xsync.discord import notify_sync_result as notify_discord  # noqa: PLC0415
     from xsync.discord import notify_sync_start as notify_discord_start  # noqa: PLC0415
+    from xsync.models import SyncStatus  # noqa: PLC0415
     from xsync.sync import purge_old_logs, sync_mirror  # noqa: PLC0415
     from xsync.telegram import (
         notify_sync_finish as notify_telegram_finish,  # noqa: PLC0415
@@ -208,6 +219,30 @@ def run_daemon_loop(
                 else cfg_dir_path / "logs"
             )
 
+            # Cron scheduling: sleep until next trigger
+            if cfg.global_config.daemon_schedule:
+                try:
+                    from croniter import croniter  # noqa: PLC0415
+
+                    now = datetime.now(tz=timezone.utc)
+                    itr = croniter(cfg.global_config.daemon_schedule, now)
+                    next_run = itr.get_next(datetime)
+                    sleep_secs = max(0.0, (next_run - now).total_seconds())
+                    _log(
+                        f"Next cron run at {next_run.isoformat()} "
+                        f"(sleeping {sleep_secs:.0f}s)"
+                    )
+                    _sleep_interruptible(sleep_secs, running)
+                    if not running[0]:
+                        break
+                except Exception as exc:  # noqa: BLE001
+                    _log(
+                        f"Invalid cron expression "
+                        f"'{cfg.global_config.daemon_schedule}': {exc}"
+                    )
+                    _sleep_interruptible(float(interval), running)
+                    continue
+
             # Resolve targets: explicit names, or all enabled mirrors.
             if names:
                 targets = [
@@ -224,45 +259,67 @@ def run_daemon_loop(
                 _log(f"Starting sync cycle for {len(targets)} mirror(s).")
 
                 for mirror in targets:
-                    if not running[0]:
-                        break
-
-                    log_dir = log_dir_base / mirror.name
-                    _log(f"Syncing mirror: {mirror.name}")
-
                     notify_telegram_start(cfg.global_config.telegram, mirror.name)
                     notify_discord_start(cfg.global_config.discord, mirror.name)
 
+                def _make_progress_cb(
+                    name: str,
+                ) -> Callable[[int], None]:
+                    last_milestone = [-1]
+
+                    def _cb(pct: int) -> None:
+                        if pct > last_milestone[0]:
+                            last_milestone[0] = pct
+                            notify_telegram_progress(
+                                cfg.global_config.telegram, name, pct
+                            )
+                            notify_discord_progress(
+                                cfg.global_config.discord, name, pct
+                            )
+
+                    return _cb
+
+                def _sync_one(mirror):
+                    log_dir = log_dir_base / mirror.name
                     on_progress = None
                     if (
                         cfg.global_config.telegram.notify_on_progress
                         or cfg.global_config.discord.notify_on_progress
                     ):
-
-                        def _make_progress_cb(name: str) -> Callable[[int], None]:
-                            last_milestone = [-1]
-
-                            def _cb(pct: int) -> None:
-                                if pct > last_milestone[0]:
-                                    last_milestone[0] = pct
-                                    notify_telegram_progress(
-                                        cfg.global_config.telegram, name, pct
-                                    )
-                                    notify_discord_progress(
-                                        cfg.global_config.discord, name, pct
-                                    )
-
-                            return _cb
-
                         on_progress = _make_progress_cb(mirror.name)
-
                     result = sync_mirror(mirror, log_dir, on_progress=on_progress)
+                    return mirror, result
+
+                results = []
+                if cfg.global_config.parallel_jobs > 1 and len(targets) > 1:
+                    with ThreadPoolExecutor(
+                        max_workers=cfg.global_config.parallel_jobs
+                    ) as executor:
+                        futures = [
+                            executor.submit(_sync_one, m) for m in targets
+                        ]
+                        for future in as_completed(futures):
+                            results.append(future.result())
+                else:
+                    for mirror in targets:
+                        if not running[0]:
+                            break
+                        results.append(_sync_one(mirror))
+
+                for mirror, result in results:
+                    if result is None:
+                        continue
 
                     # Reload config before saving to avoid clobbering concurrent edits.
                     cfg = load_config(config_dir)
                     mirror.last_sync = datetime.now(tz=timezone.utc)
                     mirror.last_status = result.status
-                    mirror.last_size = result.size_bytes
+                    if (
+                        result.status == SyncStatus.SUCCESS
+                        and result.size_bytes is not None
+                    ):
+                        mirror.previous_size = mirror.last_size
+                        mirror.last_size = result.size_bytes
                     cfg.mirrors[mirror.name] = mirror
                     save_config(cfg, config_dir)
 
@@ -295,7 +352,9 @@ def run_daemon_loop(
                         result.error,
                     )
                     purge_old_logs(
-                        log_dir, mirror.name, cfg.global_config.max_log_files
+                        log_dir_base / mirror.name,
+                        mirror.name,
+                        cfg.global_config.max_log_files,
                     )
 
                     _log(
@@ -303,12 +362,9 @@ def run_daemon_loop(
                         f"({result.duration_seconds:.1f}s)"
                     )
 
-            # Sleep in small increments so SIGTERM is noticed promptly.
-            elapsed = 0
-            while running[0] and elapsed < interval:
-                step = min(5, interval - elapsed)
-                time.sleep(step)
-                elapsed += step
+            # Interval sleep (only when cron is not configured)
+            if not cfg.global_config.daemon_schedule:
+                _sleep_interruptible(float(interval), running)
 
     finally:
         pid_file.unlink(missing_ok=True)

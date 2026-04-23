@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import os
+import shutil
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, Optional
@@ -12,13 +15,14 @@ from rich import print as rprint
 from rich.console import Console
 from rich.table import Table
 
+from xsync.api import format_size
 from xsync.config import get_config_dir, get_config_path, load_config, save_config
 from xsync.discord import notify_sync_finish as notify_discord_finish
 from xsync.discord import notify_sync_progress as notify_discord_progress
 from xsync.discord import notify_sync_result as notify_discord
 from xsync.discord import notify_sync_start as notify_discord_start
 from xsync.models import Mirror, MirrorType, SyncStatus, XsyncConfig
-from xsync.sync import purge_old_logs, sync_mirror
+from xsync.sync import diff_mirror, purge_old_logs, sync_mirror
 from xsync.telegram import notify_sync_finish as notify_telegram_finish
 from xsync.telegram import notify_sync_progress as notify_telegram_progress
 from xsync.telegram import notify_sync_result as notify_telegram
@@ -289,6 +293,32 @@ def _set_mirror_enabled(name: str, enabled: bool, config_dir: Optional[Path]) ->
 
 
 # ---------------------------------------------------------------------------
+# xsync mirror diff
+# ---------------------------------------------------------------------------
+
+
+@mirror_app.command("diff")
+def mirror_diff(
+    name: Annotated[str, typer.Argument(help="Mirror name.")],
+    config_dir: ConfigDirOption = None,
+) -> None:
+    """Show rsync dry-run diff for a mirror (what would change)."""
+    cfg = load_config(config_dir)
+    mirror = _get_mirror(cfg, name)
+
+    try:
+        output = diff_mirror(mirror)
+    except Exception as exc:
+        rprint(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1) from exc
+
+    if not output.strip():
+        rprint("[dim]No changes.[/dim]")
+    else:
+        print(output)
+
+
+# ---------------------------------------------------------------------------
 # xsync sync
 # ---------------------------------------------------------------------------
 
@@ -327,42 +357,12 @@ def sync(
         rprint("[yellow]No mirrors to sync.[/yellow]")
         return
 
-    any_failure = False
-    for mirror in targets:
-        rprint(
-            f"\n[bold cyan]Syncing[/bold cyan] [bold]{mirror.name}[/bold]  ({mirror.url})"  # noqa: E501
-        )
-        log_dir = log_dir_base / mirror.name
-
-        if not dry_run:
-            # Send start notifications
-            notify_telegram_start(cfg.global_config.telegram, mirror.name)
-            notify_discord_start(cfg.global_config.discord, mirror.name)
-
-        # Build progress callback if progress notifications are enabled
-        def _make_progress_cb(name: str):
-            last_milestone = [-1]
-
-            def _cb(pct: int) -> None:
-                if pct > last_milestone[0]:
-                    last_milestone[0] = pct
-                    notify_telegram_progress(cfg.global_config.telegram, name, pct)
-                    notify_discord_progress(cfg.global_config.discord, name, pct)
-
-            return _cb
-
-        on_progress = None
-        if (
-            cfg.global_config.telegram.notify_on_progress
-            or cfg.global_config.discord.notify_on_progress
-        ):
-            on_progress = _make_progress_cb(mirror.name)
-
-        result = sync_mirror(
-            mirror, log_dir, dry_run=dry_run, verbose=verbose, on_progress=on_progress
-        )
-
-        if dry_run:
+    if dry_run:
+        any_failure = False
+        for mirror in targets:
+            rprint(
+                f"\n[bold cyan]Syncing[/bold cyan] [bold]{mirror.name}[/bold]  ({mirror.url})"  # noqa: E501
+            )
             from xsync.sync import _build_command
 
             try:
@@ -370,16 +370,62 @@ def sync(
                 rprint(f"  [dim]dry-run command:[/dim] {' '.join(cmd)}")
             except Exception as exc:
                 rprint(f"  [red]Could not build command:[/red] {exc}")
-            continue
+                any_failure = True
+        if any_failure:
+            raise typer.Exit(1)
+        return
 
-        # Update mirror timestamps / status / size
+    def _make_progress_cb(name: str):
+        last_milestone = [-1]
+
+        def _cb(pct: int) -> None:
+            if pct > last_milestone[0]:
+                last_milestone[0] = pct
+                notify_telegram_progress(cfg.global_config.telegram, name, pct)
+                notify_discord_progress(cfg.global_config.discord, name, pct)
+
+        return _cb
+
+    def _sync_one(mirror: Mirror) -> tuple[Mirror, SyncResult]:
+        log_dir = log_dir_base / mirror.name
+        on_progress = None
+        if (
+            cfg.global_config.telegram.notify_on_progress
+            or cfg.global_config.discord.notify_on_progress
+        ):
+            on_progress = _make_progress_cb(mirror.name)
+        result = sync_mirror(mirror, log_dir, verbose=verbose, on_progress=on_progress)
+        return mirror, result
+
+    # Send start notifications before kicking off threads
+    for mirror in targets:
+        notify_telegram_start(cfg.global_config.telegram, mirror.name)
+        notify_discord_start(cfg.global_config.discord, mirror.name)
+
+    any_failure = False
+    completed = []
+
+    if cfg.global_config.parallel_jobs > 1 and len(targets) > 1:
+        with ThreadPoolExecutor(max_workers=cfg.global_config.parallel_jobs) as executor:
+            futures = [executor.submit(_sync_one, m) for m in targets]
+            for future in as_completed(futures):
+                mirror, result = future.result()
+                completed.append((mirror, result))
+    else:
+        for mirror in targets:
+            mirror, result = _sync_one(mirror)
+            completed.append((mirror, result))
+
+    # Process results sequentially to avoid config race conditions
+    for mirror, result in completed:
         mirror.last_sync = datetime.now(tz=timezone.utc)
         mirror.last_status = result.status
-        mirror.last_size = result.size_bytes
+        if result.status == SyncStatus.SUCCESS and result.size_bytes is not None:
+            mirror.previous_size = mirror.last_size
+            mirror.last_size = result.size_bytes
         cfg.mirrors[mirror.name] = mirror
         save_config(cfg, config_dir)
 
-        # Send Telegram notification
         notify_telegram(
             cfg.global_config.telegram,
             mirror.name,
@@ -387,8 +433,6 @@ def sync(
             result.duration_seconds,
             result.error,
         )
-
-        # Send Discord notification
         notify_discord(
             cfg.global_config.discord,
             mirror.name,
@@ -396,8 +440,6 @@ def sync(
             result.duration_seconds,
             result.error,
         )
-
-        # Send finish notifications (fires regardless of result)
         notify_telegram_finish(
             cfg.global_config.telegram,
             mirror.name,
@@ -413,10 +455,13 @@ def sync(
             result.error,
         )
 
-        # Purge old logs
+        log_dir = log_dir_base / mirror.name
         purge_old_logs(log_dir, mirror.name, cfg.global_config.max_log_files)
 
         style = _status_style(result.status)
+        rprint(
+            f"\n[bold cyan]Syncing[/bold cyan] [bold]{mirror.name}[/bold]  ({mirror.url})"
+        )
         rprint(
             f"  [{style}]{result.status.value.upper()}[/{style}]  "
             f"({result.duration_seconds:.1f}s)  "
@@ -457,9 +502,21 @@ def status(
     table.add_column("Enabled")
     table.add_column("Last Status")
     table.add_column("Last Sync")
+    table.add_column("Last Size")
+    table.add_column("Trend")
 
     for mirror in targets:
         style = _status_style(mirror.last_status)
+        size_str = format_size(mirror.last_size) if mirror.last_size else "—"
+        trend = "—"
+        if mirror.last_size is not None and mirror.previous_size is not None:
+            delta = mirror.last_size - mirror.previous_size
+            if delta > 0:
+                trend = f"[green]+{format_size(delta)}[/green]"
+            elif delta < 0:
+                trend = f"[red]-{format_size(abs(delta))}[/red]"
+            else:
+                trend = "[dim]0 B[/dim]"
         table.add_row(
             mirror.name,
             "[green]✓[/green]" if mirror.enabled else "[red]✗[/red]",
@@ -467,6 +524,8 @@ def status(
             mirror.last_sync.strftime("%Y-%m-%d %H:%M UTC")
             if mirror.last_sync
             else "—",
+            size_str,
+            trend,
         )
 
     console.print(table)
@@ -538,6 +597,7 @@ def config_show(
     table.add_row("max_log_files", str(gc.max_log_files))
     table.add_row("parallel_jobs", str(gc.parallel_jobs))
     table.add_row("daemon_interval", str(gc.daemon_interval))
+    table.add_row("daemon_schedule", gc.daemon_schedule or "(not set)")
     table.add_row("api_enabled", str(gc.api_enabled))
     table.add_row("api_port", str(gc.api_port))
     table.add_row("mirrors_count", str(len(cfg.mirrors)))
@@ -586,7 +646,7 @@ def config_set(
 
     int_keys = {"max_log_files", "parallel_jobs", "daemon_interval", "api_port"}
     list_keys = {"default_rsync_options"}
-    str_keys = {"log_dir"}
+    str_keys = {"log_dir", "daemon_schedule"}
     bool_keys = {"api_enabled"}
     telegram_str_keys = {"telegram.bot_token", "telegram.chat_id"}
     telegram_bool_keys = {
@@ -665,6 +725,61 @@ def config_set(
     cfg.global_config = gc
     save_config(cfg, config_dir)
     rprint(f"[green]✓[/green] Set [bold]{key}[/bold] = {value!r}")
+
+
+# ---------------------------------------------------------------------------
+# xsync config validate
+# ---------------------------------------------------------------------------
+
+
+@config_app.command("validate")
+def config_validate(
+    config_dir: ConfigDirOption = None,
+) -> None:
+    """Validate the current configuration and report issues."""
+    cfg = load_config(config_dir)
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    if not shutil.which("rsync"):
+        warnings.append("rsync not found on PATH")
+    if not shutil.which("wget"):
+        warnings.append("wget not found on PATH")
+
+    for name, mirror in cfg.mirrors.items():
+        if mirror.mirror_type == MirrorType.RSYNC and not shutil.which("rsync"):
+            errors.append(f"[{name}] rsync mirror but rsync not installed")
+        if mirror.mirror_type in (MirrorType.HTTP, MirrorType.FTP) and not shutil.which("wget"):
+            errors.append(f"[{name}] http/ftp mirror but wget not installed")
+        parent = Path(mirror.local_path).parent
+        if not parent.exists():
+            errors.append(f"[{name}] parent directory does not exist: {parent}")
+        elif not os.access(parent, os.W_OK):
+            errors.append(f"[{name}] parent directory not writable: {parent}")
+
+    tg = cfg.global_config.telegram
+    if tg.bot_token and not tg.chat_id:
+        warnings.append("telegram.bot_token set but chat_id missing")
+    if tg.chat_id and not tg.bot_token:
+        warnings.append("telegram.chat_id set but bot_token missing")
+
+    dc = cfg.global_config.discord
+    if dc.webhook_url and not dc.webhook_url.startswith("https://discord.com/api/webhooks/"):
+        warnings.append("discord.webhook_url does not look like a Discord webhook URL")
+
+    if errors:
+        rprint(f"[red]{len(errors)} error(s) found:[/red]")
+        for e in errors:
+            rprint(f"  [red]✗[/red] {e}")
+    if warnings:
+        rprint(f"[yellow]{len(warnings)} warning(s) found:[/yellow]")
+        for w in warnings:
+            rprint(f"  [yellow]![/yellow] {w}")
+    if not errors and not warnings:
+        rprint("[green]✓ Configuration is valid.[/green]")
+
+    if errors:
+        raise typer.Exit(1)
 
 
 # ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -44,6 +45,41 @@ class SyncResult:
         )
 
 
+# ---------------------------------------------------------------------------
+# Lock helpers
+# ---------------------------------------------------------------------------
+
+
+def _get_lock_path(log_dir: Path, mirror_name: str) -> Path:
+    lock_dir = log_dir.parent / "locks"
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    return lock_dir / f"{mirror_name}.lock"
+
+
+def acquire_lock(lock_path: Path) -> bool:
+    """Try to acquire a lock file atomically.
+
+    Returns *True* if the lock was acquired, *False* if it is already held.
+    """
+    try:
+        fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.write(fd, str(os.getpid()).encode())
+        os.close(fd)
+        return True
+    except FileExistsError:
+        return False
+
+
+def release_lock(lock_path: Path) -> None:
+    """Release a lock file, ignoring missing-file errors."""
+    lock_path.unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Main sync routine
+# ---------------------------------------------------------------------------
+
+
 def sync_mirror(
     mirror: Mirror,
     log_dir: Path,
@@ -69,87 +105,140 @@ def sync_mirror(
     log_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     log_path = log_dir / f"{mirror.name}-{timestamp}.log"
+    lock_path = _get_lock_path(log_dir, mirror.name)
 
-    try:
-        cmd = _build_command(mirror)
-    except FileNotFoundError as exc:
+    if not acquire_lock(lock_path):
         return SyncResult(
             mirror_name=mirror.name,
-            status=SyncStatus.FAILED,
+            status=SyncStatus.RUNNING,
             log_path=log_path,
-            error=str(exc),
+            error="Another sync is already running (lock held)",
         )
 
-    if dry_run:
-        return SyncResult(
-            mirror_name=mirror.name,
-            status=SyncStatus.PENDING,
-            log_path=log_path,
-            error=None,
-        )
+    # Late import to avoid circular dependency at module load time.
+    from xsync import api as _api  # noqa: PLC0415
 
-    Path(mirror.local_path).mkdir(parents=True, exist_ok=True)
-
-    # Inject --info=progress2 for rsync when a progress callback is supplied so
-    # that we can parse "to-chk=X/Y" lines from the output stream.
-    track_progress = on_progress is not None and mirror.mirror_type == MirrorType.RSYNC
-    if track_progress:
-        cmd = _inject_rsync_progress_flag(cmd)
-
-    start = datetime.now(tz=timezone.utc)
-    error_msg: Optional[str] = None
+    _api.set_current_mirror(mirror.name)
+    _api.set_sync_status(mirror.name, SyncStatus.RUNNING)
 
     try:
-        with log_path.open("w", encoding="utf-8") as log_fh:
-            log_fh.write(f"# Xsync log — {mirror.name}\n")
-            log_fh.write(f"# Started: {start.isoformat()}\n")
-            log_fh.write(f"# Command: {' '.join(cmd)}\n\n")
+        try:
+            cmd = _build_command(mirror)
+        except FileNotFoundError as exc:
+            return SyncResult(
+                mirror_name=mirror.name,
+                status=SyncStatus.FAILED,
+                log_path=log_path,
+                error=str(exc),
+            )
 
-            if track_progress:
-                returncode = _run_with_progress(cmd, log_fh, on_progress, verbose)  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+        if dry_run:
+            return SyncResult(
+                mirror_name=mirror.name,
+                status=SyncStatus.PENDING,
+                log_path=log_path,
+                error=None,
+            )
+
+        Path(mirror.local_path).mkdir(parents=True, exist_ok=True)
+
+        # Inject --info=progress2 for rsync when a progress callback is supplied so
+        # that we can parse "to-chk=X/Y" lines from the output stream.
+        track_progress = on_progress is not None and mirror.mirror_type == MirrorType.RSYNC
+        if track_progress:
+            cmd = _inject_rsync_progress_flag(cmd)
+
+        start = datetime.now(tz=timezone.utc)
+        error_msg: Optional[str] = None
+
+        try:
+            with log_path.open("w", encoding="utf-8") as log_fh:
+                log_fh.write(f"# Xsync log — {mirror.name}\n")
+                log_fh.write(f"# Started: {start.isoformat()}\n")
+                log_fh.write(f"# Command: {' '.join(cmd)}\n\n")
+
+                if track_progress:
+                    returncode = _run_with_progress(cmd, log_fh, on_progress, verbose)  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+                else:
+                    returncode = _run_without_progress(cmd, log_fh, verbose)
+
+            end = datetime.now(tz=timezone.utc)
+            duration = (end - start).total_seconds()
+
+            if returncode == 0:
+                status = SyncStatus.SUCCESS
             else:
-                returncode = _run_without_progress(cmd, log_fh, verbose)
-
-        end = datetime.now(tz=timezone.utc)
-        duration = (end - start).total_seconds()
-
-        if returncode == 0:
-            status = SyncStatus.SUCCESS
-        else:
+                status = SyncStatus.FAILED
+                error_msg = f"Process exited with code {returncode}"
+        except FileNotFoundError as exc:
+            end = datetime.now(tz=timezone.utc)
+            duration = (end - start).total_seconds()
             status = SyncStatus.FAILED
-            error_msg = f"Process exited with code {returncode}"
-    except FileNotFoundError as exc:
-        end = datetime.now(tz=timezone.utc)
-        duration = (end - start).total_seconds()
-        status = SyncStatus.FAILED
-        error_msg = f"Command not found: {exc}"
-        with log_path.open("a", encoding="utf-8") as log_fh:
-            log_fh.write(f"\n# ERROR: {error_msg}\n")
-    except Exception as exc:  # noqa: BLE001
-        end = datetime.now(tz=timezone.utc)
-        duration = (end - start).total_seconds()
-        status = SyncStatus.FAILED
-        error_msg = str(exc)
-        with log_path.open("a", encoding="utf-8") as log_fh:
-            log_fh.write(f"\n# ERROR: {error_msg}\n")
+            error_msg = f"Command not found: {exc}"
+            with log_path.open("a", encoding="utf-8") as log_fh:
+                log_fh.write(f"\n# ERROR: {error_msg}\n")
+        except Exception as exc:  # noqa: BLE001
+            end = datetime.now(tz=timezone.utc)
+            duration = (end - start).total_seconds()
+            status = SyncStatus.FAILED
+            error_msg = str(exc)
+            with log_path.open("a", encoding="utf-8") as log_fh:
+                log_fh.write(f"\n# ERROR: {error_msg}\n")
 
-    with log_path.open("a", encoding="utf-8") as log_fh:
-        log_fh.write(
-            f"\n# Finished: {end.isoformat()}  Duration: {duration:.1f}s  Status: {status.value}\n"  # noqa: E501
+        with log_path.open("a", encoding="utf-8") as log_fh:
+            log_fh.write(
+                f"\n# Finished: {end.isoformat()}  Duration: {duration:.1f}s  Status: {status.value}\n"  # noqa: E501
+            )
+
+        size_bytes = None
+        if status == SyncStatus.SUCCESS:
+            size_bytes = get_directory_size(mirror.local_path)
+
+        _api.set_sync_status(mirror.name, status)
+        if _api.get_current_mirror() == mirror.name:
+            _api.set_current_mirror(None)
+
+        return SyncResult(
+            mirror_name=mirror.name,
+            status=status,
+            duration_seconds=duration,
+            log_path=log_path,
+            error=error_msg,
+            size_bytes=size_bytes,
         )
+    finally:
+        release_lock(lock_path)
 
-    size_bytes = None
-    if status == SyncStatus.SUCCESS:
-        size_bytes = get_directory_size(mirror.local_path)
 
-    return SyncResult(
-        mirror_name=mirror.name,
-        status=status,
-        duration_seconds=duration,
-        log_path=log_path,
-        error=error_msg,
-        size_bytes=size_bytes,
-    )
+# ---------------------------------------------------------------------------
+# Diff (dry-run) helper
+# ---------------------------------------------------------------------------
+
+
+def diff_mirror(mirror: Mirror) -> str:
+    """Run an rsync dry-run with itemized changes and return the output.
+
+    Raises:
+        ValueError: If the mirror type is not rsync.
+        FileNotFoundError: If ``rsync`` is not installed.
+    """
+    if mirror.mirror_type != MirrorType.RSYNC:
+        raise ValueError("diff is only supported for rsync mirrors")
+    if not shutil.which("rsync"):
+        raise FileNotFoundError("rsync is not installed or not on PATH")
+
+    cmd = ["rsync", "--dry-run", "--itemize-changes"] + list(mirror.rsync_options)
+    if mirror.bandwidth_limit:
+        cmd += [f"--bwlimit={mirror.bandwidth_limit}"]
+    cmd += [mirror.url.rstrip("/") + "/", mirror.local_path.rstrip("/") + "/"]
+
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    return proc.stdout + proc.stderr
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
 
 
 def _inject_rsync_progress_flag(cmd: list[str]) -> list[str]:
