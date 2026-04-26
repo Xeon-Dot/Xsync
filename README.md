@@ -76,7 +76,7 @@ xsync status
 
 Initialise the Xsync configuration directory (`~/.config/xsync/`).
 
-```
+```shell
 xsync init [--config-dir PATH]
 ```
 
@@ -86,7 +86,7 @@ xsync init [--config-dir PATH]
 
 #### `mirror add`
 
-```
+```shell
 xsync mirror add NAME URL LOCAL_PATH [OPTIONS]
 
 Options:
@@ -98,7 +98,7 @@ Options:
 
 #### `mirror remove`
 
-```
+```shell
 xsync mirror remove NAME [--yes]
 ```
 
@@ -118,7 +118,7 @@ Enable or disable a mirror (disabled mirrors are skipped during sync).
 
 ### `xsync sync`
 
-```
+```shell
 xsync sync [NAME ...] [--dry-run]
 ```
 
@@ -128,7 +128,7 @@ Sync one or all enabled mirrors. `--dry-run` prints the command without executin
 
 ### `xsync status`
 
-```
+```shell
 xsync status [NAME ...]
 ```
 
@@ -138,7 +138,7 @@ Show the last sync status and timestamp for mirrors.
 
 ### `xsync log NAME`
 
-```
+```shell
 xsync log NAME [--lines N]
 ```
 
