@@ -147,6 +147,20 @@ class GlobalConfig(BaseModel):
         description="Discord webhook notification settings",
     )
 
+    @field_validator("max_log_files", "parallel_jobs", "daemon_interval")
+    @classmethod
+    def must_be_positive(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("Value must be greater than or equal to 1")
+        return v
+
+    @field_validator("api_port")
+    @classmethod
+    def valid_api_port(cls, v: int) -> int:
+        if v < 1 or v > 65535:
+            raise ValueError("API port must be between 1 and 65535")
+        return v
+
 
 class XsyncConfig(BaseModel):
     """Top-level configuration container."""
