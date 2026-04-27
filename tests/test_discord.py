@@ -3,10 +3,12 @@
 from unittest.mock import MagicMock, patch
 
 from xsync.discord import (
+    notify_disk_usage_warning,
     notify_sync_finish,
     notify_sync_progress,
     notify_sync_result,
     notify_sync_start,
+    send_test_notification,
     send_discord_message,
 )
 from xsync.models import DiscordConfig, SyncStatus
@@ -206,3 +208,24 @@ class TestNotifySyncProgress:
         assert "ubuntu" in content
         assert "70%" in content
         assert "📊" in content
+
+
+class TestDiskUsageAndTestNotification:
+    def test_sends_disk_usage_warning(self):
+        cfg = DiscordConfig(webhook_url="https://discord.com/api/webhooks/123/token")
+        with patch("xsync.discord.send_discord_message") as mock_send:
+            notify_disk_usage_warning(cfg, "ubuntu", 91.5, 90, "/srv/mirrors")
+        mock_send.assert_called_once()
+        content = mock_send.call_args[0][1]
+        assert "ubuntu" in content
+        assert "91.5%" in content
+        assert "/srv/mirrors" in content
+
+    def test_send_test_notification(self):
+        cfg = DiscordConfig(webhook_url="https://discord.com/api/webhooks/123/token")
+        with patch(
+            "xsync.discord.send_discord_message", return_value=True
+        ) as mock_send:
+            result = send_test_notification(cfg)
+        assert result is True
+        mock_send.assert_called_once()

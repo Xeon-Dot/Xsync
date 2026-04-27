@@ -88,7 +88,9 @@ class TestXsyncConfig:
 
 
 class TestGlobalConfigValidation:
-    @pytest.mark.parametrize("field", ["max_log_files", "parallel_jobs", "daemon_interval"])
+    @pytest.mark.parametrize(
+        "field", ["max_log_files", "parallel_jobs", "daemon_interval"]
+    )
     def test_positive_integer_fields_must_be_positive(self, field):
         with pytest.raises(ValidationError):
             GlobalConfig(**{field: 0})

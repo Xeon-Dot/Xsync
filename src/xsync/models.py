@@ -49,8 +49,13 @@ class Mirror(BaseModel):
     )
     last_sync: Optional[datetime] = Field(None, description="Timestamp of last sync")
     last_status: SyncStatus = Field(SyncStatus.NEVER, description="Last sync result")
-    last_size: Optional[int] = Field(None, description="Size in bytes of the local mirror after last successful sync")
-    previous_size: Optional[int] = Field(None, description="Size in bytes from the previous successful sync (for trend display)")
+    last_size: Optional[int] = Field(
+        None, description="Size in bytes of the local mirror after last successful sync"
+    )
+    previous_size: Optional[int] = Field(
+        None,
+        description="Size in bytes from the previous successful sync (for trend display)",
+    )
 
     @field_validator("name")
     @classmethod
@@ -139,6 +144,10 @@ class GlobalConfig(BaseModel):
     daemon_schedule: Optional[str] = Field(
         None, description="Cron expression for daemon scheduling (e.g. '0 2 * * *')"
     )
+    disk_usage_warning_percent: int = Field(
+        90,
+        description="Send a warning when a mirror filesystem reaches this usage percent",
+    )
     telegram: TelegramConfig = Field(
         default_factory=TelegramConfig, description="Telegram notification settings"
     )
@@ -159,6 +168,13 @@ class GlobalConfig(BaseModel):
     def valid_api_port(cls, v: int) -> int:
         if v < 1 or v > 65535:
             raise ValueError("API port must be between 1 and 65535")
+        return v
+
+    @field_validator("disk_usage_warning_percent")
+    @classmethod
+    def valid_disk_usage_warning_percent(cls, v: int) -> int:
+        if v < 1 or v > 100:
+            raise ValueError("Disk usage warning percent must be between 1 and 100")
         return v
 
 

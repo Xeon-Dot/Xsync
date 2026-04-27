@@ -12,6 +12,7 @@
 | **rsync mirrors**      | Full rsync support with custom options & bandwidth limiting  |
 | **HTTP / FTP mirrors** | wget-based mirroring for HTTP and FTP sources                |
 | **Notifications**      | Alerts via Telegram bot and Discord Webhook for sync results |
+| **Health checks**      | Validate tools, paths, config, and mirror disk usage         |
 | **TOML config**        | Human-readable `~/.config/xsync/config.toml`                 |
 | **Sync logs**          | Per-run log files with automatic rotation                    |
 | **Rich output**        | Colour-coded tables and status indicators                    |
@@ -136,6 +137,16 @@ Show the last sync status and timestamp for mirrors.
 
 ---
 
+### `xsync health`
+
+```shell
+xsync health [NAME ...]
+```
+
+Check configuration, required tools, mirror paths, and disk usage thresholds.
+
+---
+
 ### `xsync log NAME`
 
 ```shell
@@ -143,6 +154,18 @@ xsync log NAME [--lines N]
 ```
 
 Print the latest sync log for a mirror (default: last 50 lines).
+
+---
+
+### `xsync notify`
+
+#### `notify test`
+
+```shell
+xsync notify test [telegram|discord|all]
+```
+
+Send a test notification through configured channels.
 
 ---
 
@@ -162,6 +185,7 @@ Update a global config value.
 | `log_dir`                    | string                   | Custom log directory                                |
 | `max_log_files`              | integer                  | Max log files per mirror                            |
 | `parallel_jobs`              | integer                  | Parallel mirror sync jobs                           |
+| `disk_usage_warning_percent` | integer                  | Disk usage percentage that triggers warning alerts  |
 | `telegram.bot_token`         | string                   | Telegram Bot API token                              |
 | `telegram.chat_id`           | string                   | Telegram chat ID for notifications                  |
 | `telegram.notify_on_success` | boolean                  | Send Telegram alert on sync success (default: true) |
@@ -190,6 +214,7 @@ default_rsync_options = ["-avz", "--delete"]
 log_dir = ""
 max_log_files = 30
 parallel_jobs = 1
+disk_usage_warning_percent = 90
 
 [global.telegram]
 bot_token = "123456:ABC-DEF"

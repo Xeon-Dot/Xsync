@@ -40,7 +40,7 @@ def get_directory_size(path: str) -> int:
             for entry in p.rglob("*"):
                 if entry.is_file():
                     total += entry.stat().st_size
-    except (OSError, PermissionError):
+    except OSError, PermissionError:
         pass
     return total
 

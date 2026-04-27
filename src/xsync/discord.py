@@ -91,6 +91,35 @@ def notify_sync_progress(
     send_discord_message(discord_cfg.webhook_url, content)
 
 
+def notify_disk_usage_warning(
+    discord_cfg: DiscordConfig,
+    mirror_name: str,
+    usage_percent: float,
+    threshold_percent: int,
+    path: str,
+) -> None:
+    """Send a Discord warning when mirror disk usage is above the threshold."""
+    if not discord_cfg.webhook_url:
+        return
+    if not discord_cfg.notify_on_failure:
+        return
+
+    content = (
+        f"⚠️ Xsync: [{mirror_name}] disk usage warning\n"
+        f"Usage: {usage_percent:.1f}% "
+        f"(threshold: {threshold_percent}%)\n"
+        f"Path: {path}"
+    )
+    send_discord_message(discord_cfg.webhook_url, content)
+
+
+def send_test_notification(discord_cfg: DiscordConfig) -> bool:
+    """Send a test Discord notification and return whether it was delivered."""
+    if not discord_cfg.webhook_url:
+        return False
+    return send_discord_message(discord_cfg.webhook_url, "✅ Xsync test notification")
+
+
 def notify_sync_result(
     discord_cfg: DiscordConfig,
     mirror_name: str,

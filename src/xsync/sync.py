@@ -144,7 +144,9 @@ def sync_mirror(
 
         # Inject --info=progress2 for rsync when a progress callback is supplied so
         # that we can parse "to-chk=X/Y" lines from the output stream.
-        track_progress = on_progress is not None and mirror.mirror_type == MirrorType.RSYNC
+        track_progress = (
+            on_progress is not None and mirror.mirror_type == MirrorType.RSYNC
+        )
         if track_progress:
             cmd = _inject_rsync_progress_flag(cmd)
 
@@ -364,7 +366,7 @@ def get_directory_size(path: str) -> int:
             for entry in p.rglob("*"):
                 if entry.is_file():
                     total += entry.stat().st_size
-    except (OSError, PermissionError):
+    except OSError, PermissionError:
         pass
     return total
 

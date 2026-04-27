@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import signal
+import shutil
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -38,7 +39,7 @@ def read_pid(pid_file: Path) -> Optional[int]:
     """Read the PID from *pid_file*; return ``None`` if missing or invalid."""
     try:
         return int(pid_file.read_text().strip())
-    except (FileNotFoundError, ValueError):
+    except FileNotFoundError, ValueError:
         return None
 
 
@@ -167,6 +168,9 @@ def run_daemon_loop(
     # Late imports to avoid circular dependencies at module load time.
     from xsync.config import get_config_dir, load_config, save_config  # noqa: PLC0415
     from xsync.discord import (
+        notify_disk_usage_warning as notify_discord_disk_warning,  # noqa: PLC0415
+    )
+    from xsync.discord import (
         notify_sync_finish as notify_discord_finish,  # noqa: PLC0415
     )
     from xsync.discord import (
@@ -176,6 +180,9 @@ def run_daemon_loop(
     from xsync.discord import notify_sync_start as notify_discord_start  # noqa: PLC0415
     from xsync.models import SyncStatus  # noqa: PLC0415
     from xsync.sync import purge_old_logs, sync_mirror  # noqa: PLC0415
+    from xsync.telegram import (
+        notify_disk_usage_warning as notify_telegram_disk_warning,  # noqa: PLC0415
+    )
     from xsync.telegram import (
         notify_sync_finish as notify_telegram_finish,  # noqa: PLC0415
     )
@@ -198,6 +205,19 @@ def run_daemon_loop(
 
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
+
+    def _disk_usage_for_path(path: str) -> Optional[tuple[float, Path]]:
+        target = Path(path)
+        usage_path = target if target.exists() else target.parent
+        if not usage_path.exists():
+            return None
+        try:
+            usage = shutil.disk_usage(usage_path)
+        except OSError:
+            return None
+        if usage.total == 0:
+            return None
+        return usage.used / usage.total * 100, usage_path
 
     # Start API server if enabled
     if api_enabled:
@@ -295,9 +315,7 @@ def run_daemon_loop(
                     with ThreadPoolExecutor(
                         max_workers=cfg.global_config.parallel_jobs
                     ) as executor:
-                        futures = [
-                            executor.submit(_sync_one, m) for m in targets
-                        ]
+                        futures = [executor.submit(_sync_one, m) for m in targets]
                         for future in as_completed(futures):
                             results.append(future.result())
                 else:
@@ -351,6 +369,25 @@ def run_daemon_loop(
                         result.duration_seconds,
                         result.error,
                     )
+                    usage = _disk_usage_for_path(mirror.local_path)
+                    if usage is not None:
+                        usage_percent, usage_path = usage
+                        threshold = cfg.global_config.disk_usage_warning_percent
+                        if usage_percent >= threshold:
+                            notify_telegram_disk_warning(
+                                cfg.global_config.telegram,
+                                mirror.name,
+                                usage_percent,
+                                threshold,
+                                str(usage_path),
+                            )
+                            notify_discord_disk_warning(
+                                cfg.global_config.discord,
+                                mirror.name,
+                                usage_percent,
+                                threshold,
+                                str(usage_path),
+                            )
                     purge_old_logs(
                         log_dir_base / mirror.name,
                         mirror.name,

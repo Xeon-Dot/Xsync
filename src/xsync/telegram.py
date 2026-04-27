@@ -94,6 +94,39 @@ def notify_sync_progress(
     send_telegram_message(telegram_cfg.bot_token, telegram_cfg.chat_id, text)
 
 
+def notify_disk_usage_warning(
+    telegram_cfg: TelegramConfig,
+    mirror_name: str,
+    usage_percent: float,
+    threshold_percent: int,
+    path: str,
+) -> None:
+    """Send a Telegram warning when mirror disk usage is above the threshold."""
+    if not telegram_cfg.bot_token or not telegram_cfg.chat_id:
+        return
+    if not telegram_cfg.notify_on_failure:
+        return
+
+    text = (
+        f"⚠️ Xsync: [{mirror_name}] disk usage warning\n"
+        f"Usage: {usage_percent:.1f}% "
+        f"(threshold: {threshold_percent}%)\n"
+        f"Path: {path}"
+    )
+    send_telegram_message(telegram_cfg.bot_token, telegram_cfg.chat_id, text)
+
+
+def send_test_notification(telegram_cfg: TelegramConfig) -> bool:
+    """Send a test Telegram notification and return whether it was delivered."""
+    if not telegram_cfg.bot_token or not telegram_cfg.chat_id:
+        return False
+    return send_telegram_message(
+        telegram_cfg.bot_token,
+        telegram_cfg.chat_id,
+        "✅ Xsync test notification",
+    )
+
+
 def notify_sync_result(
     telegram_cfg: TelegramConfig,
     mirror_name: str,

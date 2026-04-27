@@ -73,6 +73,9 @@ def _serialise(cfg: XsyncConfig) -> dict:
             "api_enabled": cfg.global_config.api_enabled,
             "api_port": cfg.global_config.api_port,
             "daemon_schedule": cfg.global_config.daemon_schedule or "",
+            "disk_usage_warning_percent": (
+                cfg.global_config.disk_usage_warning_percent
+            ),
             "telegram": {
                 "bot_token": cfg.global_config.telegram.bot_token or "",
                 "chat_id": cfg.global_config.telegram.chat_id or "",
@@ -149,6 +152,7 @@ def _parse_raw(raw: dict) -> XsyncConfig:
         api_enabled=global_raw.get("api_enabled", False),
         api_port=global_raw.get("api_port", 58080),
         daemon_schedule=global_raw.get("daemon_schedule") or None,
+        disk_usage_warning_percent=global_raw.get("disk_usage_warning_percent", 90),
         telegram=telegram,
         discord=discord,
     )

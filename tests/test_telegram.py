@@ -4,10 +4,12 @@ from unittest.mock import MagicMock, patch
 
 from xsync.models import SyncStatus, TelegramConfig
 from xsync.telegram import (
+    notify_disk_usage_warning,
     notify_sync_finish,
     notify_sync_progress,
     notify_sync_result,
     notify_sync_start,
+    send_test_notification,
     send_telegram_message,
 )
 
@@ -224,3 +226,24 @@ class TestNotifySyncProgress:
         assert "ubuntu" in text
         assert "50%" in text
         assert "📊" in text
+
+
+class TestDiskUsageAndTestNotification:
+    def test_sends_disk_usage_warning(self):
+        cfg = TelegramConfig(bot_token="tok123", chat_id="chat789")
+        with patch("xsync.telegram.send_telegram_message") as mock_send:
+            notify_disk_usage_warning(cfg, "ubuntu", 91.5, 90, "/srv/mirrors")
+        mock_send.assert_called_once()
+        text = mock_send.call_args[0][2]
+        assert "ubuntu" in text
+        assert "91.5%" in text
+        assert "/srv/mirrors" in text
+
+    def test_send_test_notification(self):
+        cfg = TelegramConfig(bot_token="tok123", chat_id="chat789")
+        with patch(
+            "xsync.telegram.send_telegram_message", return_value=True
+        ) as mock_send:
+            result = send_test_notification(cfg)
+        assert result is True
+        mock_send.assert_called_once()

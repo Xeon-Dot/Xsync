@@ -264,6 +264,15 @@ class TestConfigCommands:
         )
         assert result.exit_code != 0
 
+    def test_config_set_disk_usage_warning_percent(self, tmp_path):
+        result = runner.invoke(
+            app,
+            ["config", "set", "disk_usage_warning_percent", "85"]
+            + make_cfg_opt(tmp_path),
+        )
+        assert result.exit_code == 0
+        assert "disk_usage_warning_percent" in result.output
+
     def test_config_set_telegram_bot_token(self, tmp_path):
         result = runner.invoke(
             app,
@@ -329,6 +338,61 @@ class TestSync:
 
     def test_sync_missing_mirror_fails(self, tmp_path):
         result = runner.invoke(app, ["sync", "nonexistent"] + make_cfg_opt(tmp_path))
+        assert result.exit_code != 0
+
+
+class TestHealth:
+    def test_health_no_mirrors_warns_but_succeeds(self, tmp_path):
+        result = runner.invoke(app, ["health"] + make_cfg_opt(tmp_path))
+        assert result.exit_code == 0
+        assert "no mirrors configured" in result.output
+
+    def test_health_checks_mirror(self, tmp_path, mocker):
+        mocker.patch("xsync.main.shutil.which", return_value="/usr/bin/rsync")
+        local_path = tmp_path / "ubuntu"
+        result = runner.invoke(
+            app,
+            [
+                "mirror",
+                "add",
+                "ubuntu",
+                "rsync://mirror.example.com/ubuntu",
+                str(local_path),
+            ]
+            + make_cfg_opt(tmp_path),
+        )
+        assert result.exit_code == 0, result.output
+
+        result = runner.invoke(app, ["health"] + make_cfg_opt(tmp_path))
+        assert result.exit_code == 0, result.output
+        assert "ubuntu" in result.output
+        assert "disk" in result.output
+
+
+class TestNotifyCommands:
+    def test_notify_test_telegram(self, tmp_path, mocker):
+        runner.invoke(
+            app,
+            ["config", "set", "telegram.bot_token", "tok123"] + make_cfg_opt(tmp_path),
+        )
+        runner.invoke(
+            app,
+            ["config", "set", "telegram.chat_id", "chat456"] + make_cfg_opt(tmp_path),
+        )
+        mock_send = mocker.patch("xsync.main.send_telegram_test", return_value=True)
+
+        result = runner.invoke(
+            app, ["notify", "test", "telegram"] + make_cfg_opt(tmp_path)
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "telegram" in result.output
+        mock_send.assert_called_once()
+
+    def test_notify_test_invalid_channel_fails(self, tmp_path):
+        result = runner.invoke(
+            app, ["notify", "test", "email"] + make_cfg_opt(tmp_path)
+        )
         assert result.exit_code != 0
 
 

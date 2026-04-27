@@ -17,16 +17,20 @@ from rich.table import Table
 
 from xsync.api import format_size
 from xsync.config import get_config_dir, get_config_path, load_config, save_config
+from xsync.discord import notify_disk_usage_warning as notify_discord_disk_warning
 from xsync.discord import notify_sync_finish as notify_discord_finish
 from xsync.discord import notify_sync_progress as notify_discord_progress
 from xsync.discord import notify_sync_result as notify_discord
 from xsync.discord import notify_sync_start as notify_discord_start
+from xsync.discord import send_test_notification as send_discord_test
 from xsync.models import Mirror, MirrorType, SyncStatus, XsyncConfig
 from xsync.sync import diff_mirror, purge_old_logs, sync_mirror
+from xsync.telegram import notify_disk_usage_warning as notify_telegram_disk_warning
 from xsync.telegram import notify_sync_finish as notify_telegram_finish
 from xsync.telegram import notify_sync_progress as notify_telegram_progress
 from xsync.telegram import notify_sync_result as notify_telegram
 from xsync.telegram import notify_sync_start as notify_telegram_start
+from xsync.telegram import send_test_notification as send_telegram_test
 
 app = typer.Typer(
     name="xsync",
@@ -42,11 +46,13 @@ daemon_app = typer.Typer(
     help="Manage the background sync daemon.", no_args_is_help=True
 )
 api_app = typer.Typer(help="Manage the API server.", no_args_is_help=True)
+notify_app = typer.Typer(help="Test notification channels.", no_args_is_help=True)
 
 app.add_typer(mirror_app, name="mirror")
 app.add_typer(config_app, name="config")
 app.add_typer(daemon_app, name="daemon")
 app.add_typer(api_app, name="api")
+app.add_typer(notify_app, name="notify")
 
 console = Console()
 
@@ -406,7 +412,9 @@ def sync(
     completed = []
 
     if cfg.global_config.parallel_jobs > 1 and len(targets) > 1:
-        with ThreadPoolExecutor(max_workers=cfg.global_config.parallel_jobs) as executor:
+        with ThreadPoolExecutor(
+            max_workers=cfg.global_config.parallel_jobs
+        ) as executor:
             futures = [executor.submit(_sync_one, m) for m in targets]
             for future in as_completed(futures):
                 mirror, result = future.result()
@@ -454,6 +462,7 @@ def sync(
             result.duration_seconds,
             result.error,
         )
+        _notify_disk_warning_if_needed(cfg, mirror)
 
         log_dir = log_dir_base / mirror.name
         purge_old_logs(log_dir, mirror.name, cfg.global_config.max_log_files)
@@ -573,6 +582,112 @@ def log(
 
 
 # ---------------------------------------------------------------------------
+# xsync health
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def health(
+    names: Annotated[
+        Optional[list[str]],
+        typer.Argument(help="Mirror name(s). Omit to check all mirrors."),
+    ] = None,
+    config_dir: ConfigDirOption = None,
+) -> None:
+    """Check local Xsync configuration, tools, paths, and disk usage."""
+    cfg = load_config(config_dir)
+    cfg_path = get_config_path(config_dir)
+    cfg_dir = get_config_dir(config_dir)
+
+    table = Table(title="Xsync Health", show_lines=True)
+    table.add_column("Check", style="bold cyan")
+    table.add_column("Target")
+    table.add_column("Status")
+    table.add_column("Details")
+
+    errors = 0
+    warnings = 0
+
+    def add_row(check: str, target: str, state: str, details: str) -> None:
+        nonlocal errors, warnings
+        if state == "error":
+            errors += 1
+            status = "[red]error[/red]"
+        elif state == "warning":
+            warnings += 1
+            status = "[yellow]warning[/yellow]"
+        else:
+            status = "[green]ok[/green]"
+        table.add_row(check, target, status, details)
+
+    add_row(
+        "config",
+        str(cfg_path),
+        "ok" if cfg_path.exists() else "warning",
+        "file exists" if cfg_path.exists() else "using default configuration",
+    )
+    add_row("config dir", str(cfg_dir), "ok", "directory is available")
+
+    required_tools = _required_tools(cfg)
+    if not required_tools:
+        add_row("tools", "-", "warning", "no mirrors configured")
+    for tool in sorted(required_tools):
+        add_row(
+            "tool",
+            tool,
+            "ok" if shutil.which(tool) else "error",
+            "found on PATH" if shutil.which(tool) else "not found on PATH",
+        )
+
+    targets = (
+        _resolve_sync_targets(cfg, names, skip_disabled=False)
+        if cfg.mirrors or names
+        else []
+    )
+
+    for mirror in targets:
+        expected_scheme = _expected_scheme_status(mirror)
+        add_row(
+            "url",
+            mirror.name,
+            "ok" if expected_scheme is None else "error",
+            expected_scheme or mirror.url,
+        )
+
+        parent = Path(mirror.local_path).parent
+        if not parent.exists():
+            add_row("path", mirror.name, "error", f"parent missing: {parent}")
+            continue
+        if not os.access(parent, os.W_OK):
+            add_row("path", mirror.name, "error", f"parent not writable: {parent}")
+        else:
+            add_row("path", mirror.name, "ok", f"parent writable: {parent}")
+
+        usage = _disk_usage_for_path(mirror.local_path)
+        if usage is None:
+            add_row("disk", mirror.name, "error", "cannot read filesystem usage")
+            continue
+        usage_percent, usage_path = usage
+        threshold = cfg.global_config.disk_usage_warning_percent
+        state = "warning" if usage_percent >= threshold else "ok"
+        add_row(
+            "disk",
+            mirror.name,
+            state,
+            f"{usage_percent:.1f}% used at {usage_path} (threshold {threshold}%)",
+        )
+
+    console.print(table)
+    if errors:
+        rprint(f"[red]{errors} error(s), {warnings} warning(s).[/red]")
+        raise typer.Exit(1)
+    if warnings:
+        rprint(f"[yellow]{warnings} warning(s).[/yellow]")
+    else:
+        rprint("[green]✓ Health check passed.[/green]")
+
+
+# ---------------------------------------------------------------------------
 # xsync config show
 # ---------------------------------------------------------------------------
 
@@ -600,6 +715,10 @@ def config_show(
     table.add_row("daemon_schedule", gc.daemon_schedule or "(not set)")
     table.add_row("api_enabled", str(gc.api_enabled))
     table.add_row("api_port", str(gc.api_port))
+    table.add_row(
+        "disk_usage_warning_percent",
+        str(gc.disk_usage_warning_percent),
+    )
     table.add_row("mirrors_count", str(len(cfg.mirrors)))
     tg = gc.telegram
     masked_token = (tg.bot_token[:6] + "…") if tg.bot_token else "(not set)"
@@ -644,7 +763,13 @@ def config_set(
     cfg = load_config(config_dir)
     gc = cfg.global_config
 
-    int_keys = {"max_log_files", "parallel_jobs", "daemon_interval", "api_port"}
+    int_keys = {
+        "max_log_files",
+        "parallel_jobs",
+        "daemon_interval",
+        "api_port",
+        "disk_usage_warning_percent",
+    }
     list_keys = {"default_rsync_options"}
     str_keys = {"log_dir", "daemon_schedule"}
     bool_keys = {"api_enabled"}
@@ -667,10 +792,17 @@ def config_set(
 
     if key in int_keys:
         try:
-            setattr(gc, key, int(value))
+            parsed_value = int(value)
         except ValueError:
             rprint(f"[red]Error:[/red] '{key}' requires an integer value.")
             raise typer.Exit(1)
+        if key == "disk_usage_warning_percent" and not 1 <= parsed_value <= 100:
+            rprint(
+                "[red]Error:[/red] 'disk_usage_warning_percent' must be "
+                "between 1 and 100."
+            )
+            raise typer.Exit(1)
+        setattr(gc, key, parsed_value)
     elif key in list_keys:
         setattr(gc, key, value.split())
     elif key in str_keys:
@@ -749,7 +881,9 @@ def config_validate(
     for name, mirror in cfg.mirrors.items():
         if mirror.mirror_type == MirrorType.RSYNC and not shutil.which("rsync"):
             errors.append(f"[{name}] rsync mirror but rsync not installed")
-        if mirror.mirror_type in (MirrorType.HTTP, MirrorType.FTP) and not shutil.which("wget"):
+        if mirror.mirror_type in (MirrorType.HTTP, MirrorType.FTP) and not shutil.which(
+            "wget"
+        ):
             errors.append(f"[{name}] http/ftp mirror but wget not installed")
         parent = Path(mirror.local_path).parent
         if not parent.exists():
@@ -764,7 +898,9 @@ def config_validate(
         warnings.append("telegram.chat_id set but bot_token missing")
 
     dc = cfg.global_config.discord
-    if dc.webhook_url and not dc.webhook_url.startswith("https://discord.com/api/webhooks/"):
+    if dc.webhook_url and not dc.webhook_url.startswith(
+        "https://discord.com/api/webhooks/"
+    ):
         warnings.append("discord.webhook_url does not look like a Discord webhook URL")
 
     if errors:
@@ -993,6 +1129,47 @@ def daemon_restart(
 
 
 # ---------------------------------------------------------------------------
+# xsync notify test
+# ---------------------------------------------------------------------------
+
+
+@notify_app.command("test")
+def notify_test(
+    channel: Annotated[
+        str,
+        typer.Argument(help="Notification channel: telegram, discord, or all."),
+    ] = "all",
+    config_dir: ConfigDirOption = None,
+) -> None:
+    """Send a test notification through one or all configured channels."""
+    cfg = load_config(config_dir)
+    channel = channel.lower()
+    if channel not in {"telegram", "discord", "all"}:
+        rprint("[red]Error:[/red] channel must be telegram, discord, or all.")
+        raise typer.Exit(1)
+
+    results: list[tuple[str, bool]] = []
+    if channel in {"telegram", "all"}:
+        results.append(("telegram", send_telegram_test(cfg.global_config.telegram)))
+    if channel in {"discord", "all"}:
+        results.append(("discord", send_discord_test(cfg.global_config.discord)))
+
+    failed = False
+    for name, ok in results:
+        if ok:
+            rprint(f"[green]✓[/green] Sent {name} test notification.")
+        else:
+            failed = True
+            rprint(
+                f"[red]✗[/red] Could not send {name} test notification. "
+                "Check configuration and network access."
+            )
+
+    if failed:
+        raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -1020,6 +1197,66 @@ def _resolve_sync_targets(
     if skip_disabled:
         mirrors = [m for m in mirrors if m.enabled]
     return mirrors
+
+
+def _required_tools(cfg: XsyncConfig) -> set[str]:
+    tools: set[str] = set()
+    for mirror in cfg.mirrors.values():
+        if mirror.mirror_type == MirrorType.RSYNC:
+            tools.add("rsync")
+        elif mirror.mirror_type in (MirrorType.HTTP, MirrorType.FTP):
+            tools.add("wget")
+    return tools
+
+
+def _expected_scheme_status(mirror: Mirror) -> Optional[str]:
+    if mirror.mirror_type == MirrorType.RSYNC and not mirror.url.startswith("rsync://"):
+        return "rsync mirrors should use rsync:// URLs"
+    if mirror.mirror_type == MirrorType.HTTP and not mirror.url.startswith(
+        ("http://", "https://")
+    ):
+        return "http mirrors should use http:// or https:// URLs"
+    if mirror.mirror_type == MirrorType.FTP and not mirror.url.startswith("ftp://"):
+        return "ftp mirrors should use ftp:// URLs"
+    return None
+
+
+def _disk_usage_for_path(path: str) -> Optional[tuple[float, Path]]:
+    target = Path(path)
+    usage_path = target if target.exists() else target.parent
+    if not usage_path.exists():
+        return None
+    try:
+        usage = shutil.disk_usage(usage_path)
+    except OSError:
+        return None
+    if usage.total == 0:
+        return None
+    return usage.used / usage.total * 100, usage_path
+
+
+def _notify_disk_warning_if_needed(cfg: XsyncConfig, mirror: Mirror) -> None:
+    usage = _disk_usage_for_path(mirror.local_path)
+    if usage is None:
+        return
+    usage_percent, usage_path = usage
+    threshold = cfg.global_config.disk_usage_warning_percent
+    if usage_percent < threshold:
+        return
+    notify_telegram_disk_warning(
+        cfg.global_config.telegram,
+        mirror.name,
+        usage_percent,
+        threshold,
+        str(usage_path),
+    )
+    notify_discord_disk_warning(
+        cfg.global_config.discord,
+        mirror.name,
+        usage_percent,
+        threshold,
+        str(usage_path),
+    )
 
 
 def _status_style(status: SyncStatus) -> str:
