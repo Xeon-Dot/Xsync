@@ -24,7 +24,7 @@ def send_telegram_message(bot_token: str, chat_id: str, text: str) -> bool:
         response = httpx.post(url, json={"chat_id": chat_id, "text": text}, timeout=10)
         response.raise_for_status()
         return True
-    except Exception as exc:  # noqa: BLE001
+    except (httpx.HTTPError, OSError) as exc:
         logger.warning("Failed to send Telegram notification: %s", exc)
         return False
 

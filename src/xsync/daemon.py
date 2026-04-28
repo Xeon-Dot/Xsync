@@ -5,14 +5,13 @@ from __future__ import annotations
 import logging
 import os
 import signal
-import shutil
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from types import FrameType
-from typing import Callable, Optional
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +38,7 @@ def read_pid(pid_file: Path) -> Optional[int]:
     """Read the PID from *pid_file*; return ``None`` if missing or invalid."""
     try:
         return int(pid_file.read_text().strip())
-    except FileNotFoundError, ValueError:
+    except (FileNotFoundError, ValueError):
         return None
 
 
@@ -173,9 +172,6 @@ def run_daemon_loop(
     from xsync.discord import (
         notify_sync_finish as notify_discord_finish,  # noqa: PLC0415
     )
-    from xsync.discord import (
-        notify_sync_progress as notify_discord_progress,  # noqa: PLC0415
-    )
     from xsync.discord import notify_sync_result as notify_discord  # noqa: PLC0415
     from xsync.discord import notify_sync_start as notify_discord_start  # noqa: PLC0415
     from xsync.models import SyncStatus  # noqa: PLC0415
@@ -186,13 +182,11 @@ def run_daemon_loop(
     from xsync.telegram import (
         notify_sync_finish as notify_telegram_finish,  # noqa: PLC0415
     )
-    from xsync.telegram import (
-        notify_sync_progress as notify_telegram_progress,  # noqa: PLC0415
-    )
     from xsync.telegram import notify_sync_result as notify_telegram  # noqa: PLC0415
     from xsync.telegram import (
         notify_sync_start as notify_telegram_start,  # noqa: PLC0415
     )
+    from xsync.utils import disk_usage_for_path, make_progress_callback  # noqa: PLC0415
 
     pid_file = get_pid_file(config_dir)
     pid_file.write_text(str(os.getpid()))
@@ -206,20 +200,7 @@ def run_daemon_loop(
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
 
-    def _disk_usage_for_path(path: str) -> Optional[tuple[float, Path]]:
-        target = Path(path)
-        usage_path = target if target.exists() else target.parent
-        if not usage_path.exists():
-            return None
-        try:
-            usage = shutil.disk_usage(usage_path)
-        except OSError:
-            return None
-        if usage.total == 0:
-            return None
-        return usage.used / usage.total * 100, usage_path
-
-    # Start API server if enabled
+    cfg = load_config(config_dir)
     if api_enabled:
         from xsync.api import init_api_state, start_api_server_thread  # noqa: PLC0415
 
@@ -255,7 +236,7 @@ def run_daemon_loop(
                     _sleep_interruptible(sleep_secs, running)
                     if not running[0]:
                         break
-                except Exception as exc:  # noqa: BLE001
+                except (ValueError, KeyError) as exc:
                     _log(
                         f"Invalid cron expression "
                         f"'{cfg.global_config.daemon_schedule}': {exc}"
@@ -282,23 +263,6 @@ def run_daemon_loop(
                     notify_telegram_start(cfg.global_config.telegram, mirror.name)
                     notify_discord_start(cfg.global_config.discord, mirror.name)
 
-                def _make_progress_cb(
-                    name: str,
-                ) -> Callable[[int], None]:
-                    last_milestone = [-1]
-
-                    def _cb(pct: int) -> None:
-                        if pct > last_milestone[0]:
-                            last_milestone[0] = pct
-                            notify_telegram_progress(
-                                cfg.global_config.telegram, name, pct
-                            )
-                            notify_discord_progress(
-                                cfg.global_config.discord, name, pct
-                            )
-
-                    return _cb
-
                 def _sync_one(mirror):
                     log_dir = log_dir_base / mirror.name
                     on_progress = None
@@ -306,7 +270,11 @@ def run_daemon_loop(
                         cfg.global_config.telegram.notify_on_progress
                         or cfg.global_config.discord.notify_on_progress
                     ):
-                        on_progress = _make_progress_cb(mirror.name)
+                        on_progress = make_progress_callback(
+                            cfg.global_config.telegram,
+                            cfg.global_config.discord,
+                            mirror.name,
+                        )
                     result = sync_mirror(mirror, log_dir, on_progress=on_progress)
                     return mirror, result
 
@@ -369,7 +337,7 @@ def run_daemon_loop(
                         result.duration_seconds,
                         result.error,
                     )
-                    usage = _disk_usage_for_path(mirror.local_path)
+                    usage = disk_usage_for_path(mirror.local_path)
                     if usage is not None:
                         usage_percent, usage_path = usage
                         threshold = cfg.global_config.disk_usage_warning_percent

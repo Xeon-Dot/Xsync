@@ -2,14 +2,16 @@
 
 from unittest.mock import MagicMock, patch
 
+import httpx
+
 from xsync.discord import (
     notify_disk_usage_warning,
     notify_sync_finish,
     notify_sync_progress,
     notify_sync_result,
     notify_sync_start,
-    send_test_notification,
     send_discord_message,
+    send_test_notification,
 )
 from xsync.models import DiscordConfig, SyncStatus
 
@@ -28,7 +30,10 @@ class TestSendDiscordMessage:
         assert kwargs["json"]["content"] == "Hello!"
 
     def test_http_error_returns_false(self):
-        with patch("xsync.discord.httpx.post", side_effect=Exception("network error")):
+        with patch(
+            "xsync.discord.httpx.post",
+            side_effect=httpx.HTTPError("network error"),
+        ):  # noqa: E501
             result = send_discord_message(
                 "https://discord.com/api/webhooks/123/token", "msg"
             )

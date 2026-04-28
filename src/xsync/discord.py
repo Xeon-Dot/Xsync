@@ -21,7 +21,7 @@ def send_discord_message(webhook_url: str, content: str) -> bool:
         response = httpx.post(webhook_url, json={"content": content}, timeout=10)
         response.raise_for_status()
         return True
-    except Exception as exc:  # noqa: BLE001
+    except (httpx.HTTPError, OSError) as exc:
         logger.warning("Failed to send Discord notification: %s", exc)
         return False
 

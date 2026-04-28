@@ -443,7 +443,7 @@ class TestDaemonCommands:
 
     def test_daemon_start_custom_interval(self, tmp_path, mocker):
         mocker.patch("xsync.daemon.is_running", return_value=False)
-        mock_daemonize = mocker.patch("xsync.daemon.daemonize")
+        mocker.patch("xsync.daemon.daemonize")
         mock_loop = mocker.patch("xsync.daemon.run_daemon_loop")
         result = runner.invoke(
             app,

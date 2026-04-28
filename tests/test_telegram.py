@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
+import httpx
+
 from xsync.models import SyncStatus, TelegramConfig
 from xsync.telegram import (
     notify_disk_usage_warning,
@@ -9,8 +11,8 @@ from xsync.telegram import (
     notify_sync_progress,
     notify_sync_result,
     notify_sync_start,
-    send_test_notification,
     send_telegram_message,
+    send_test_notification,
 )
 
 
@@ -29,7 +31,10 @@ class TestSendTelegramMessage:
         assert kwargs["json"]["text"] == "Hello!"
 
     def test_http_error_returns_false(self):
-        with patch("xsync.telegram.httpx.post", side_effect=Exception("network error")):
+        with patch(
+            "xsync.telegram.httpx.post",
+            side_effect=httpx.HTTPError("network error"),
+        ):  # noqa: E501
             result = send_telegram_message("token", "chat", "msg")
         assert result is False
 

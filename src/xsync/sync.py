@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from xsync.models import Mirror, MirrorType, SyncStatus
+from xsync.utils import get_directory_size
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +180,7 @@ def sync_mirror(
             error_msg = f"Command not found: {exc}"
             with log_path.open("a", encoding="utf-8") as log_fh:
                 log_fh.write(f"\n# ERROR: {error_msg}\n")
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001  # safety net for unexpected subprocess errors
             end = datetime.now(tz=timezone.utc)
             duration = (end - start).total_seconds()
             status = SyncStatus.FAILED
@@ -355,20 +356,6 @@ def _build_wget_command(mirror: Mirror) -> list[str]:
     ] + list(mirror.http_options)
     cmd.append(mirror.url)
     return cmd
-
-
-def get_directory_size(path: str) -> int:
-    """Calculate total size of a directory in bytes."""
-    total = 0
-    try:
-        p = Path(path)
-        if p.exists():
-            for entry in p.rglob("*"):
-                if entry.is_file():
-                    total += entry.stat().st_size
-    except OSError, PermissionError:
-        pass
-    return total
 
 
 def purge_old_logs(log_dir: Path, mirror_name: str, max_files: int) -> int:

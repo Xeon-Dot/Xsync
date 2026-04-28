@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 import time
@@ -19,18 +20,37 @@ from xsync.api import format_size
 from xsync.config import get_config_dir, get_config_path, load_config, save_config
 from xsync.discord import notify_disk_usage_warning as notify_discord_disk_warning
 from xsync.discord import notify_sync_finish as notify_discord_finish
-from xsync.discord import notify_sync_progress as notify_discord_progress
 from xsync.discord import notify_sync_result as notify_discord
 from xsync.discord import notify_sync_start as notify_discord_start
 from xsync.discord import send_test_notification as send_discord_test
 from xsync.models import Mirror, MirrorType, SyncStatus, XsyncConfig
-from xsync.sync import diff_mirror, purge_old_logs, sync_mirror
+from xsync.sync import SyncResult, diff_mirror, purge_old_logs, sync_mirror
 from xsync.telegram import notify_disk_usage_warning as notify_telegram_disk_warning
 from xsync.telegram import notify_sync_finish as notify_telegram_finish
-from xsync.telegram import notify_sync_progress as notify_telegram_progress
 from xsync.telegram import notify_sync_result as notify_telegram
 from xsync.telegram import notify_sync_start as notify_telegram_start
 from xsync.telegram import send_test_notification as send_telegram_test
+from xsync.utils import disk_usage_for_path, make_progress_callback
+
+# ---------------------------------------------------------------------------
+# Logging setup
+# ---------------------------------------------------------------------------
+
+
+def _setup_logging() -> None:
+    """Configure basic logging for the Xsync package.
+
+    Sends WARNING and above to stderr with a minimal format.  When the
+    daemon runs, stderr is redirected to the daemon log file.
+    """
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.WARNING)
+    handler.setFormatter(logging.Formatter("%(levelname)s [%(name)s] %(message)s"))
+    logging.getLogger("xsync").addHandler(handler)
+    logging.getLogger("xsync").setLevel(logging.WARNING)
+
+
+_setup_logging()
 
 app = typer.Typer(
     name="xsync",
@@ -147,7 +167,7 @@ def mirror_add(
             bandwidth_limit=bandwidth_limit,
             rsync_options=rsync_options,
         )
-    except Exception as exc:
+    except ValueError as exc:
         rprint(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1) from exc
 
@@ -314,7 +334,7 @@ def mirror_diff(
 
     try:
         output = diff_mirror(mirror)
-    except Exception as exc:
+    except (ValueError, FileNotFoundError) as exc:
         rprint(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1) from exc
 
@@ -374,23 +394,12 @@ def sync(
             try:
                 cmd = _build_command(mirror)
                 rprint(f"  [dim]dry-run command:[/dim] {' '.join(cmd)}")
-            except Exception as exc:
+            except (FileNotFoundError, ValueError) as exc:
                 rprint(f"  [red]Could not build command:[/red] {exc}")
                 any_failure = True
         if any_failure:
             raise typer.Exit(1)
         return
-
-    def _make_progress_cb(name: str):
-        last_milestone = [-1]
-
-        def _cb(pct: int) -> None:
-            if pct > last_milestone[0]:
-                last_milestone[0] = pct
-                notify_telegram_progress(cfg.global_config.telegram, name, pct)
-                notify_discord_progress(cfg.global_config.discord, name, pct)
-
-        return _cb
 
     def _sync_one(mirror: Mirror) -> tuple[Mirror, SyncResult]:
         log_dir = log_dir_base / mirror.name
@@ -399,11 +408,14 @@ def sync(
             cfg.global_config.telegram.notify_on_progress
             or cfg.global_config.discord.notify_on_progress
         ):
-            on_progress = _make_progress_cb(mirror.name)
+            on_progress = make_progress_callback(
+                cfg.global_config.telegram,
+                cfg.global_config.discord,
+                mirror.name,
+            )
         result = sync_mirror(mirror, log_dir, verbose=verbose, on_progress=on_progress)
         return mirror, result
 
-    # Send start notifications before kicking off threads
     for mirror in targets:
         notify_telegram_start(cfg.global_config.telegram, mirror.name)
         notify_discord_start(cfg.global_config.discord, mirror.name)
@@ -663,7 +675,7 @@ def health(
         else:
             add_row("path", mirror.name, "ok", f"parent writable: {parent}")
 
-        usage = _disk_usage_for_path(mirror.local_path)
+        usage = disk_usage_for_path(mirror.local_path)
         if usage is None:
             add_row("disk", mirror.name, "error", "cannot read filesystem usage")
             continue
@@ -730,11 +742,14 @@ def config_show(
     table.add_row("telegram.notify_on_finish", str(tg.notify_on_finish))
     table.add_row("telegram.notify_on_progress", str(tg.notify_on_progress))
     dc = gc.discord
-    masked_webhook = (
-        (dc.webhook_url[:32] + "…" if len(dc.webhook_url) > 32 else dc.webhook_url)
-        if dc.webhook_url
-        else "(not set)"
-    )
+    masked_webhook = "(not set)"
+    if dc.webhook_url:
+        prefix = "https://discord.com/api/webhooks/"
+        if dc.webhook_url.startswith(prefix):
+            masked_webhook = prefix + "…" + dc.webhook_url[-6:]
+        else:
+            chunk = dc.webhook_url[:12] + "…"
+            masked_webhook = chunk if len(dc.webhook_url) > 12 else dc.webhook_url
     table.add_row("discord.webhook_url", masked_webhook)
     table.add_row("discord.notify_on_success", str(dc.notify_on_success))
     table.add_row("discord.notify_on_failure", str(dc.notify_on_failure))
@@ -898,10 +913,13 @@ def config_validate(
         warnings.append("telegram.chat_id set but bot_token missing")
 
     dc = cfg.global_config.discord
-    if dc.webhook_url and not dc.webhook_url.startswith(
-        "https://discord.com/api/webhooks/"
-    ):
-        warnings.append("discord.webhook_url does not look like a Discord webhook URL")
+    if dc.webhook_url:
+        if not dc.webhook_url.startswith("https://"):
+            errors.append("discord.webhook_url must use HTTPS")
+        elif not dc.webhook_url.startswith("https://discord.com/api/webhooks/"):
+            warnings.append(
+                "discord.webhook_url does not look like a Discord webhook URL"
+            )
 
     if errors:
         rprint(f"[red]{len(errors)} error(s) found:[/red]")
@@ -1221,22 +1239,8 @@ def _expected_scheme_status(mirror: Mirror) -> Optional[str]:
     return None
 
 
-def _disk_usage_for_path(path: str) -> Optional[tuple[float, Path]]:
-    target = Path(path)
-    usage_path = target if target.exists() else target.parent
-    if not usage_path.exists():
-        return None
-    try:
-        usage = shutil.disk_usage(usage_path)
-    except OSError:
-        return None
-    if usage.total == 0:
-        return None
-    return usage.used / usage.total * 100, usage_path
-
-
 def _notify_disk_warning_if_needed(cfg: XsyncConfig, mirror: Mirror) -> None:
-    usage = _disk_usage_for_path(mirror.local_path)
+    usage = disk_usage_for_path(mirror.local_path)
     if usage is None:
         return
     usage_percent, usage_path = usage
@@ -1283,30 +1287,83 @@ def api_start(
     config_dir: ConfigDirOption = None,
 ) -> None:
     """Start the API server."""
-    from xsync.api import init_api_state, run_api_server
+    from xsync.api import (
+        get_api_pid_file,
+        init_api_state,
+        is_api_running,
+        run_api_server,
+    )
 
     cfg_dir = get_config_dir(config_dir)
+    pid_file = get_api_pid_file(cfg_dir)
+
+    if is_api_running(pid_file):
+        rprint("[yellow]API server is already running.[/yellow]")
+        raise typer.Exit(1)
+
     init_api_state(config_dir)
     rprint(f"[green]Starting Xsync API server[/green] on port {port}")
     rprint(f"[dim]Config directory: {cfg_dir}[/dim]")
     rprint(f"[dim]API endpoint: http://0.0.0.0:{port}/api/status[/dim]")
-    run_api_server(port=port)
+    try:
+        run_api_server(port=port, pid_file=pid_file)
+    except KeyboardInterrupt:
+        rprint()
 
 
 @api_app.command("stop")
 def api_stop(
     config_dir: ConfigDirOption = None,
+    force: bool = typer.Option(
+        False, "--force", help="Send SIGKILL instead of SIGTERM."
+    ),
 ) -> None:
-    """Stop the API server (when running as a separate process)."""
-    rprint("[yellow]Use Ctrl+C to stop the API server.[/yellow]")
+    """Stop a running API server process."""
+    from xsync.api import (
+        get_api_pid_file,
+        is_api_running,
+        read_api_pid,
+        stop_api,
+    )
+
+    cfg_dir = get_config_dir(config_dir)
+    pid_file = get_api_pid_file(cfg_dir)
+
+    if not is_api_running(pid_file):
+        rprint("[yellow]API server is not running.[/yellow]")
+        return
+
+    pid = read_api_pid(pid_file)
+    if stop_api(pid_file, force):
+        sig = "SIGKILL" if force else "SIGTERM"
+        rprint(f"[green]Sent {sig} to API server (PID {pid}).[/green]")
+    else:
+        rprint("[red]Failed to stop API server.[/red]")
+        raise typer.Exit(1)
 
 
 @api_app.command("status")
 def api_status(
     config_dir: ConfigDirOption = None,
 ) -> None:
-    """Show API server status."""
-    rprint("[dim]API server runs in foreground. Use 'xsync api start' to start.[/dim]")
+    """Show whether the API server is running."""
+    from xsync.api import (
+        get_api_pid_file,
+        is_api_running,
+        read_api_pid,
+    )
+
+    cfg_dir = get_config_dir(config_dir)
+    pid_file = get_api_pid_file(cfg_dir)
+
+    if is_api_running(pid_file):
+        pid = read_api_pid(pid_file)
+        cfg = load_config(config_dir)
+        port = cfg.global_config.api_port
+        rprint(f"[green]API server is running[/green] (PID {pid}, port {port})")
+        rprint(f"  [dim]endpoint →[/dim] http://0.0.0.0:{port}/api/status")
+    else:
+        rprint("[dim]API server is not running[/dim]")
 
 
 if __name__ == "__main__":

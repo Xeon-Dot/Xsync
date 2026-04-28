@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import signal
 import threading
 from pathlib import Path
 from typing import Optional
@@ -29,20 +31,6 @@ def format_size(size_bytes: int) -> str:
             return f"{size:.2f} {unit}" if unit != "B" else f"{int(size)} {unit}"
         size /= 1024.0
     return f"{size:.2f} EiB"
-
-
-def get_directory_size(path: str) -> int:
-    """Calculate total size of a directory in bytes."""
-    total = 0
-    try:
-        p = Path(path)
-        if p.exists():
-            for entry in p.rglob("*"):
-                if entry.is_file():
-                    total += entry.stat().st_size
-    except OSError, PermissionError:
-        pass
-    return total
 
 
 class MirrorStatusResponse(BaseModel):
@@ -184,11 +172,25 @@ def init_api_state(config_dir: Optional[Path] = None) -> None:
     _api_state["config_dir"] = config_dir
 
 
-def run_api_server(host: str = "0.0.0.0", port: int = 58080) -> None:
-    """Run the FastAPI server."""
+def run_api_server(
+    host: str = "0.0.0.0", port: int = 58080, pid_file: Optional[Path] = None
+) -> None:
+    """Run the FastAPI server.
+
+    If *pid_file* is provided, the current PID is written to it on startup
+    and the file is removed when the server shuts down.
+    """
     import uvicorn
 
-    uvicorn.run(app, host=host, port=port, log_level="warning")
+    if pid_file:
+        pid_file.parent.mkdir(parents=True, exist_ok=True)
+        pid_file.write_text(str(os.getpid()))
+
+    try:
+        uvicorn.run(app, host=host, port=port, log_level="warning")
+    finally:
+        if pid_file:
+            pid_file.unlink(missing_ok=True)
 
 
 def start_api_server_thread(
@@ -202,3 +204,54 @@ def start_api_server_thread(
     )
     thread.start()
     return thread
+
+
+# ---------------------------------------------------------------------------
+# API PID file helpers
+# ---------------------------------------------------------------------------
+
+_API_PID_FILENAME = "xsync-api.pid"
+
+
+def get_api_pid_file(config_dir: Path) -> Path:
+    """Return the path to the API server PID file."""
+    return config_dir / _API_PID_FILENAME
+
+
+def read_api_pid(pid_file: Path) -> Optional[int]:
+    """Read the API PID from *pid_file*; return ``None`` if missing or invalid."""
+    try:
+        return int(pid_file.read_text().strip())
+    except (FileNotFoundError, ValueError):
+        return None
+
+
+def is_api_running(pid_file: Path) -> bool:
+    """Return ``True`` if the API process recorded in *pid_file* is alive."""
+    pid = read_api_pid(pid_file)
+    if pid is None:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def stop_api(pid_file: Path, force: bool = False) -> bool:
+    """Send SIGTERM (or SIGKILL with force=True) to the recorded API process.
+
+    Returns ``True`` if a signal was delivered, ``False`` if the process was
+    not found (stale PID file is cleaned up automatically).
+    """
+    pid = read_api_pid(pid_file)
+    if pid is None:
+        return False
+    try:
+        os.kill(pid, signal.SIGKILL if force else signal.SIGTERM)
+        return True
+    except ProcessLookupError:
+        pid_file.unlink(missing_ok=True)
+        return False
