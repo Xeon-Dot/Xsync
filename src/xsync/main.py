@@ -23,7 +23,7 @@ from xsync.discord import notify_sync_finish as notify_discord_finish
 from xsync.discord import notify_sync_result as notify_discord
 from xsync.discord import notify_sync_start as notify_discord_start
 from xsync.discord import send_test_notification as send_discord_test
-from xsync.models import Mirror, MirrorType, SyncStatus, XsyncConfig
+from xsync.models import GlobalConfig, Mirror, MirrorType, SyncStatus, XsyncConfig
 from xsync.sync import SyncResult, diff_mirror, purge_old_logs, sync_mirror
 from xsync.telegram import notify_disk_usage_warning as notify_telegram_disk_warning
 from xsync.telegram import notify_sync_finish as notify_telegram_finish
@@ -90,6 +90,36 @@ ConfigDirOption = Annotated[
         show_default=False,
     ),
 ]
+
+_CONFIG_INT_KEYS = {
+    "max_log_files",
+    "parallel_jobs",
+    "daemon_interval",
+    "api_port",
+    "disk_usage_warning_percent",
+}
+_CONFIG_LIST_KEYS = {"default_rsync_options"}
+_CONFIG_STR_KEYS = {"log_dir", "daemon_schedule"}
+_CONFIG_BOOL_KEYS = {"api_enabled"}
+_CONFIG_NESTED_STR_KEYS = {
+    "telegram.bot_token": ("telegram", "bot_token"),
+    "telegram.chat_id": ("telegram", "chat_id"),
+    "discord.webhook_url": ("discord", "webhook_url"),
+}
+_CONFIG_NESTED_BOOL_KEYS = {
+    "telegram.notify_on_success": ("telegram", "notify_on_success"),
+    "telegram.notify_on_failure": ("telegram", "notify_on_failure"),
+    "telegram.notify_on_start": ("telegram", "notify_on_start"),
+    "telegram.notify_on_finish": ("telegram", "notify_on_finish"),
+    "telegram.notify_on_progress": ("telegram", "notify_on_progress"),
+    "discord.notify_on_success": ("discord", "notify_on_success"),
+    "discord.notify_on_failure": ("discord", "notify_on_failure"),
+    "discord.notify_on_start": ("discord", "notify_on_start"),
+    "discord.notify_on_finish": ("discord", "notify_on_finish"),
+    "discord.notify_on_progress": ("discord", "notify_on_progress"),
+}
+_CONFIG_TRUE_VALUES = {"true", "1", "yes"}
+_CONFIG_FALSE_VALUES = {"false", "0", "no"}
 
 
 # ---------------------------------------------------------------------------
@@ -392,7 +422,7 @@ def sync(
             from xsync.sync import _build_command
 
             try:
-                cmd = _build_command(mirror)
+                cmd = _build_command(mirror, check_tools=False)
                 rprint(f"  [dim]dry-run command:[/dim] {' '.join(cmd)}")
             except (FileNotFoundError, ValueError) as exc:
                 rprint(f"  [red]Could not build command:[/red] {exc}")
@@ -481,7 +511,8 @@ def sync(
 
         style = _status_style(result.status)
         rprint(
-            f"\n[bold cyan]Syncing[/bold cyan] [bold]{mirror.name}[/bold]  ({mirror.url})"
+            f"\n[bold cyan]Syncing[/bold cyan] "
+            f"[bold]{mirror.name}[/bold]  ({mirror.url})"
         )
         rprint(
             f"  [{style}]{result.status.value.upper()}[/{style}]  "
@@ -778,39 +809,16 @@ def config_set(
     cfg = load_config(config_dir)
     gc = cfg.global_config
 
-    int_keys = {
-        "max_log_files",
-        "parallel_jobs",
-        "daemon_interval",
-        "api_port",
-        "disk_usage_warning_percent",
-    }
-    list_keys = {"default_rsync_options"}
-    str_keys = {"log_dir", "daemon_schedule"}
-    bool_keys = {"api_enabled"}
-    telegram_str_keys = {"telegram.bot_token", "telegram.chat_id"}
-    telegram_bool_keys = {
-        "telegram.notify_on_success",
-        "telegram.notify_on_failure",
-        "telegram.notify_on_start",
-        "telegram.notify_on_finish",
-        "telegram.notify_on_progress",
-    }
-    discord_str_keys = {"discord.webhook_url"}
-    discord_bool_keys = {
-        "discord.notify_on_success",
-        "discord.notify_on_failure",
-        "discord.notify_on_start",
-        "discord.notify_on_finish",
-        "discord.notify_on_progress",
-    }
+    _set_global_config_value(gc, key, value)
 
-    if key in int_keys:
-        try:
-            parsed_value = int(value)
-        except ValueError:
-            rprint(f"[red]Error:[/red] '{key}' requires an integer value.")
-            raise typer.Exit(1)
+    cfg.global_config = gc
+    save_config(cfg, config_dir)
+    rprint(f"[green]✓[/green] Set [bold]{key}[/bold] = {value!r}")
+
+
+def _set_global_config_value(gc: GlobalConfig, key: str, value: str) -> None:
+    if key in _CONFIG_INT_KEYS:
+        parsed_value = _parse_config_int(key, value)
         if key == "disk_usage_warning_percent" and not 1 <= parsed_value <= 100:
             rprint(
                 "[red]Error:[/red] 'disk_usage_warning_percent' must be "
@@ -818,60 +826,62 @@ def config_set(
             )
             raise typer.Exit(1)
         setattr(gc, key, parsed_value)
-    elif key in list_keys:
+        return
+
+    if key in _CONFIG_LIST_KEYS:
         setattr(gc, key, value.split())
-    elif key in str_keys:
+        return
+
+    if key in _CONFIG_STR_KEYS:
         setattr(gc, key, value)
-    elif key in bool_keys:
-        if value.lower() in ("true", "1", "yes"):
-            setattr(gc, key, True)
-        elif value.lower() in ("false", "0", "no"):
-            setattr(gc, key, False)
-        else:
-            rprint(f"[red]Error:[/red] '{key}' requires a boolean value (true/false).")
-            raise typer.Exit(1)
-    elif key in telegram_str_keys:
-        attr = key.split(".")[1]
-        setattr(gc.telegram, attr, value or None)
-    elif key in telegram_bool_keys:
-        attr = key.split(".")[1]
-        if value.lower() in ("true", "1", "yes"):
-            setattr(gc.telegram, attr, True)
-        elif value.lower() in ("false", "0", "no"):
-            setattr(gc.telegram, attr, False)
-        else:
-            rprint(f"[red]Error:[/red] '{key}' requires a boolean value (true/false).")
-            raise typer.Exit(1)
-    elif key in discord_str_keys:
-        attr = key.split(".")[1]
-        setattr(gc.discord, attr, value or None)
-    elif key in discord_bool_keys:
-        attr = key.split(".")[1]
-        if value.lower() in ("true", "1", "yes"):
-            setattr(gc.discord, attr, True)
-        elif value.lower() in ("false", "0", "no"):
-            setattr(gc.discord, attr, False)
-        else:
-            rprint(f"[red]Error:[/red] '{key}' requires a boolean value (true/false).")
-            raise typer.Exit(1)
-    else:
-        all_keys = (
-            int_keys
-            | list_keys
-            | str_keys
-            | bool_keys
-            | telegram_str_keys
-            | telegram_bool_keys
-            | discord_str_keys
-            | discord_bool_keys
-        )
-        valid = ", ".join(sorted(all_keys))
-        rprint(f"[red]Error:[/red] Unknown key '{key}'. Valid keys: {valid}")
+        return
+
+    if key in _CONFIG_BOOL_KEYS:
+        setattr(gc, key, _parse_config_bool(key, value))
+        return
+
+    if key in _CONFIG_NESTED_STR_KEYS:
+        target_name, attr = _CONFIG_NESTED_STR_KEYS[key]
+        setattr(getattr(gc, target_name), attr, value or None)
+        return
+
+    if key in _CONFIG_NESTED_BOOL_KEYS:
+        target_name, attr = _CONFIG_NESTED_BOOL_KEYS[key]
+        setattr(getattr(gc, target_name), attr, _parse_config_bool(key, value))
+        return
+
+    valid = ", ".join(_valid_config_keys())
+    rprint(f"[red]Error:[/red] Unknown key '{key}'. Valid keys: {valid}")
+    raise typer.Exit(1)
+
+
+def _parse_config_int(key: str, value: str) -> int:
+    try:
+        return int(value)
+    except ValueError:
+        rprint(f"[red]Error:[/red] '{key}' requires an integer value.")
         raise typer.Exit(1)
 
-    cfg.global_config = gc
-    save_config(cfg, config_dir)
-    rprint(f"[green]✓[/green] Set [bold]{key}[/bold] = {value!r}")
+
+def _parse_config_bool(key: str, value: str) -> bool:
+    lowered = value.lower()
+    if lowered in _CONFIG_TRUE_VALUES:
+        return True
+    if lowered in _CONFIG_FALSE_VALUES:
+        return False
+    rprint(f"[red]Error:[/red] '{key}' requires a boolean value (true/false).")
+    raise typer.Exit(1)
+
+
+def _valid_config_keys() -> list[str]:
+    return sorted(
+        _CONFIG_INT_KEYS
+        | _CONFIG_LIST_KEYS
+        | _CONFIG_STR_KEYS
+        | _CONFIG_BOOL_KEYS
+        | set(_CONFIG_NESTED_STR_KEYS)
+        | set(_CONFIG_NESTED_BOOL_KEYS)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1010,7 +1020,8 @@ def daemon_start(
     if enable_api:
         rprint(
             f"[green]Starting Xsync daemon[/green] "
-            f"(interval={sync_interval}s, log={log_file}, api=enabled, port={final_api_port})"
+            f"(interval={sync_interval}s, log={log_file}, "
+            f"api=enabled, port={final_api_port})"
         )
     else:
         rprint(

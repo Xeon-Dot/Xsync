@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tomllib
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -19,6 +20,13 @@ from xsync.models import (
 
 _DEFAULT_CONFIG_DIR = Path.home() / ".config" / "xsync"
 _CONFIG_FILE = "config.toml"
+_NOTIFICATION_FLAG_DEFAULTS = {
+    "notify_on_success": True,
+    "notify_on_failure": True,
+    "notify_on_start": False,
+    "notify_on_finish": False,
+    "notify_on_progress": False,
+}
 
 
 def get_config_dir(config_dir: Optional[Path] = None) -> Path:
@@ -76,23 +84,14 @@ def _serialise(cfg: XsyncConfig) -> dict:
             "disk_usage_warning_percent": (
                 cfg.global_config.disk_usage_warning_percent
             ),
-            "telegram": {
-                "bot_token": cfg.global_config.telegram.bot_token or "",
-                "chat_id": cfg.global_config.telegram.chat_id or "",
-                "notify_on_success": cfg.global_config.telegram.notify_on_success,
-                "notify_on_failure": cfg.global_config.telegram.notify_on_failure,
-                "notify_on_start": cfg.global_config.telegram.notify_on_start,
-                "notify_on_finish": cfg.global_config.telegram.notify_on_finish,
-                "notify_on_progress": cfg.global_config.telegram.notify_on_progress,
-            },
-            "discord": {
-                "webhook_url": cfg.global_config.discord.webhook_url or "",
-                "notify_on_success": cfg.global_config.discord.notify_on_success,
-                "notify_on_failure": cfg.global_config.discord.notify_on_failure,
-                "notify_on_start": cfg.global_config.discord.notify_on_start,
-                "notify_on_finish": cfg.global_config.discord.notify_on_finish,
-                "notify_on_progress": cfg.global_config.discord.notify_on_progress,
-            },
+            "telegram": _serialise_notification_config(
+                cfg.global_config.telegram,
+                ("bot_token", "chat_id"),
+            ),
+            "discord": _serialise_notification_config(
+                cfg.global_config.discord,
+                ("webhook_url",),
+            ),
         },
         "mirrors": {},
     }
@@ -126,20 +125,12 @@ def _parse_raw(raw: dict) -> XsyncConfig:
     telegram = TelegramConfig(
         bot_token=telegram_raw.get("bot_token") or None,
         chat_id=telegram_raw.get("chat_id") or None,
-        notify_on_success=telegram_raw.get("notify_on_success", True),
-        notify_on_failure=telegram_raw.get("notify_on_failure", True),
-        notify_on_start=telegram_raw.get("notify_on_start", False),
-        notify_on_finish=telegram_raw.get("notify_on_finish", False),
-        notify_on_progress=telegram_raw.get("notify_on_progress", False),
+        **_parse_notification_flags(telegram_raw),
     )
     discord_raw = global_raw.get("discord", {})
     discord = DiscordConfig(
         webhook_url=discord_raw.get("webhook_url") or None,
-        notify_on_success=discord_raw.get("notify_on_success", True),
-        notify_on_failure=discord_raw.get("notify_on_failure", True),
-        notify_on_start=discord_raw.get("notify_on_start", False),
-        notify_on_finish=discord_raw.get("notify_on_finish", False),
-        notify_on_progress=discord_raw.get("notify_on_progress", False),
+        **_parse_notification_flags(discord_raw),
     )
     global_config = GlobalConfig(
         default_rsync_options=global_raw.get(
@@ -160,8 +151,6 @@ def _parse_raw(raw: dict) -> XsyncConfig:
     mirrors: dict[str, Mirror] = {}
     for name, mraw in raw.get("mirrors", {}).items():
         last_sync_raw = mraw.get("last_sync")
-        from datetime import datetime
-
         last_sync = datetime.fromisoformat(last_sync_raw) if last_sync_raw else None
         mirrors[name] = Mirror(
             name=name,
@@ -184,3 +173,25 @@ def _parse_raw(raw: dict) -> XsyncConfig:
         global_config=global_config,
         mirrors=mirrors,
     )
+
+
+def _serialise_notification_config(
+    notification_cfg: object,
+    credential_fields: tuple[str, ...],
+) -> dict:
+    """Convert Telegram or Discord notification settings to plain TOML data."""
+    data = {
+        field: getattr(notification_cfg, field) or "" for field in credential_fields
+    }
+    data.update(
+        {flag: getattr(notification_cfg, flag) for flag in _NOTIFICATION_FLAG_DEFAULTS}
+    )
+    return data
+
+
+def _parse_notification_flags(raw: dict) -> dict:
+    """Parse shared notification flags from a raw config section."""
+    return {
+        flag: raw.get(flag, default)
+        for flag, default in _NOTIFICATION_FLAG_DEFAULTS.items()
+    }

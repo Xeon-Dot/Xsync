@@ -54,7 +54,9 @@ class Mirror(BaseModel):
     )
     previous_size: Optional[int] = Field(
         None,
-        description="Size in bytes from the previous successful sync (for trend display)",
+        description=(
+            "Size in bytes from the previous successful sync (for trend display)"
+        ),
     )
 
     @field_validator("name")
@@ -62,7 +64,8 @@ class Mirror(BaseModel):
     def name_must_be_slug(cls, v: str) -> str:
         if not v.replace("-", "").replace("_", "").isalnum():
             raise ValueError(
-                "Mirror name must contain only alphanumeric characters, hyphens, or underscores"
+                "Mirror name must contain only alphanumeric characters, "
+                "hyphens, or underscores"
             )
         return v
 
@@ -146,7 +149,9 @@ class GlobalConfig(BaseModel):
     )
     disk_usage_warning_percent: int = Field(
         90,
-        description="Send a warning when a mirror filesystem reaches this usage percent",
+        description=(
+            "Send a warning when a mirror filesystem reaches this usage percent"
+        ),
     )
     telegram: TelegramConfig = Field(
         default_factory=TelegramConfig, description="Telegram notification settings"

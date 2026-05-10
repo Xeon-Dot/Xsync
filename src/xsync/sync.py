@@ -124,7 +124,7 @@ def sync_mirror(
 
     try:
         try:
-            cmd = _build_command(mirror)
+            cmd = _build_command(mirror, check_tools=not dry_run)
         except FileNotFoundError as exc:
             return SyncResult(
                 mirror_name=mirror.name,
@@ -323,18 +323,18 @@ def _run_with_progress(
     return proc.returncode
 
 
-def _build_command(mirror: Mirror) -> list[str]:
+def _build_command(mirror: Mirror, check_tools: bool = True) -> list[str]:
     """Build the shell command list for syncing a mirror."""
     if mirror.mirror_type == MirrorType.RSYNC:
-        return _build_rsync_command(mirror)
+        return _build_rsync_command(mirror, check_tools=check_tools)
     if mirror.mirror_type in (MirrorType.HTTP, MirrorType.FTP):
-        return _build_wget_command(mirror)
+        return _build_wget_command(mirror, check_tools=check_tools)
     raise ValueError(f"Unsupported mirror type: {mirror.mirror_type}")
 
 
-def _build_rsync_command(mirror: Mirror) -> list[str]:
+def _build_rsync_command(mirror: Mirror, check_tools: bool = True) -> list[str]:
     """Build an rsync command."""
-    if not shutil.which("rsync"):
+    if check_tools and not shutil.which("rsync"):
         raise FileNotFoundError("rsync is not installed or not on PATH")
     cmd = ["rsync"] + list(mirror.rsync_options)
     if mirror.bandwidth_limit:
@@ -343,9 +343,9 @@ def _build_rsync_command(mirror: Mirror) -> list[str]:
     return cmd
 
 
-def _build_wget_command(mirror: Mirror) -> list[str]:
+def _build_wget_command(mirror: Mirror, check_tools: bool = True) -> list[str]:
     """Build a wget mirror command for HTTP/FTP mirrors."""
-    if not shutil.which("wget"):
+    if check_tools and not shutil.which("wget"):
         raise FileNotFoundError("wget is not installed or not on PATH")
     cmd = [
         "wget",
