@@ -7,18 +7,54 @@
 
 ## Features
 
+### Sync
+
 | Feature | Details |
 | --- | --- |
-| **rsync mirrors** | Full rsync support with custom options, bandwidth limiting, and progress tracking |
-| **HTTP / FTP mirrors** | wget-based mirroring for HTTP and FTP sources |
-| **Daemon mode** | Background sync with interval-based or cron-based scheduling |
-| **REST API** | FastAPI monitoring API for mirror status and sizes |
-| **Notifications** | Alerts via Telegram Bot API and Discord Webhook (start, finish, progress, disk usage) |
-| **Health checks** | Validate tools, paths, config, and mirror disk usage |
-| **TOML config** | Human-readable `~/.config/xsync/config.toml` |
-| **Sync logs** | Per-run log files with automatic rotation |
-| **Rich output** | Colour-coded tables and status indicators |
+| **rsync mirrors** | Full rsync support with per-mirror options, bandwidth limiting, and progress tracking |
+| **HTTP / FTP mirrors** | wget-based mirroring for HTTP, HTTPS, and FTP sources |
+| **Mirror diff** | `xsync mirror diff` — preview changes before syncing via `rsync --dry-run --itemize-changes` |
+| **Parallel sync** | Concurrent mirror syncing via `ThreadPoolExecutor` (configurable `parallel_jobs`) |
+| **Dry-run & verbose** | `--dry-run` prints commands without executing; `--verbose` streams live subprocess output |
+| **Per-mirror locking** | Atomic lock files prevent overlapping sync runs of the same mirror |
+
+### Daemon
+
+| Feature | Details |
+| --- | --- |
+| **Background sync** | Double-fork daemon with PID file management and graceful shutdown on SIGTERM/SIGINT |
+| **Scheduling** | Interval-based (seconds) or cron-based (e.g. `"0 */6 * * *"`) scheduling via croniter |
+| **Config hot-reload** | Re-reads config between sync cycles — no restart needed after config changes |
+
+### API
+
+| Feature | Details |
+| --- | --- |
+| **REST endpoints** | `GET /api/status`, `/api/mirrors`, `/api/mirrors/{name}`, `/api/mirrors/{name}/size` |
+| **Live sync state** | Real-time tracking of currently syncing mirror and status accessible via API |
+| **Standalone or threaded** | Run the API server standalone or embedded in the daemon as a background thread |
+
+### Notifications
+
+| Feature | Details |
+| --- | --- |
+| **Telegram & Discord** | Alerts via Telegram Bot API and Discord Webhooks with per-channel notification toggles |
+| **Trigger events** | Configurable alerts for start, success, failure, finish, and progress milestones (every 10%) |
+| **Disk warnings** | Automatic alert when mirror filesystem exceeds configurable threshold |
+| **Test command** | `xsync notify test` to verify notification channel configuration before relying on them |
+
+### Management
+
+| Feature | Details |
+| --- | --- |
+| **TOML config** | Human-readable `~/.config/xsync/config.toml` with schema versioning for future migrations |
+| **CLI config editor** | `xsync config set` and `xsync config validate` — no need to edit TOML by hand |
+| **Health checks** | Validate tools on PATH, URL schemes, directory permissions, and disk usage |
+| **Sync logs** | Per-run timestamped log files with automatic rotation and in-CLI viewing (`xsync log`) |
+| **Size trends** | Track previous vs current mirror size delta in `xsync status` |
+| **Rich output** | Colour-coded tables, status indicators, and progress bars |
 | **Shell completion** | bash / zsh / fish via Typer |
+| **Standalone binary** | Single-file executable built with PyInstaller — no Python required at runtime |
 
 ---
 
