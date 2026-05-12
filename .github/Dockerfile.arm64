@@ -1,0 +1,29 @@
+FROM --platform=linux/arm64 python:3.11-slim
+
+WORKDIR /build
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    binutils \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy project files
+COPY pyproject.toml uv.lock ./
+COPY src/ ./src/
+COPY xsync.spec ./
+
+# Install uv
+RUN pip install --no-cache-dir uv
+
+# Install dependencies and PyInstaller
+RUN uv sync && \
+    uv pip install pyinstaller
+
+# Build executable
+RUN uv run pyinstaller xsync.spec && \
+    chmod +x dist/xsync
+
+# Test executable
+RUN ./dist/xsync --version
+
+# The output executable is in /build/dist/xsync

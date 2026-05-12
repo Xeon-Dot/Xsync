@@ -24,14 +24,46 @@
 
 ## Requirements
 
-- Python >= 3.11
-- [uv](https://docs.astral.sh/uv/) package manager
 - `rsync` (for rsync mirrors)
 - `wget` (for HTTP/FTP mirrors)
+
+For building from source:
+- Python >= 3.11
+- [uv](https://docs.astral.sh/uv/) package manager
 
 ---
 
 ## Installation
+
+### Option 1: Pre-built Executable (Recommended)
+
+Download the latest release for your platform:
+
+**Linux AMD64 (x86_64):**
+```bash
+wget https://github.com/xeon-dot/Xsync/releases/latest/download/xsync-linux-amd64.tar.gz
+tar -xzf xsync-linux-amd64.tar.gz
+sudo mv xsync /usr/local/bin/
+xsync --version
+```
+
+**Linux ARM64 (aarch64):**
+```bash
+wget https://github.com/xeon-dot/Xsync/releases/latest/download/xsync-linux-arm64.tar.gz
+tar -xzf xsync-linux-arm64.tar.gz
+sudo mv xsync /usr/local/bin/
+xsync --version
+```
+
+**Verify checksum (optional):**
+```bash
+wget https://github.com/xeon-dot/Xsync/releases/latest/download/xsync-linux-amd64.tar.gz.sha256
+sha256sum -c xsync-linux-amd64.tar.gz.sha256
+```
+
+> **Note:** The executable is self-contained and doesn't require Python to be installed. However, you still need `rsync` and `wget` installed on your system for mirror synchronization.
+
+### Option 2: Install from Source
 
 ```bash
 # Clone the repo
