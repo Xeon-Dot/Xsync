@@ -61,7 +61,35 @@ def acquire_lock(lock_path: Path) -> bool:
     """Try to acquire a lock file atomically.
 
     Returns *True* if the lock was acquired, *False* if it is already held.
+    Clears stale lock files left by processes that terminated unexpectedly.
     """
+    try:
+        fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.write(fd, str(os.getpid()).encode())
+        os.close(fd)
+        return True
+    except FileExistsError:
+        pass
+
+    # Lock file exists — check whether the owning process is still alive.
+    stale = False
+    try:
+        pid = int(lock_path.read_text().strip())
+        os.kill(pid, 0)
+    except (ValueError, FileNotFoundError):
+        stale = True  # unreadable or already gone
+    except ProcessLookupError:
+        stale = True  # process is dead
+    except PermissionError:
+        stale = False  # process alive, we lack signal permission
+    except OSError:
+        stale = True  # invalid PID or other OS-level error (e.g. Windows invalid param)
+
+    if not stale:
+        return False
+
+    logger.warning("Removing stale lock file %s", lock_path)
+    lock_path.unlink(missing_ok=True)
     try:
         fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         os.write(fd, str(os.getpid()).encode())

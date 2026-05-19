@@ -9,6 +9,7 @@ from xsync.sync import (
     _build_rsync_command,
     _build_wget_command,
     _inject_rsync_progress_flag,
+    acquire_lock,
     purge_old_logs,
     sync_mirror,
 )
@@ -219,3 +220,44 @@ class TestSyncMirrorWithProgress:
             sync_mirror(http_mirror, tmp_path / "logs", on_progress=lambda pct: None)
         mock_run.assert_called_once()
         mock_popen.assert_not_called()
+
+
+class TestAcquireLock:
+    def test_acquires_when_no_lock_file(self, tmp_path):
+        lock_path = tmp_path / "test.lock"
+        assert acquire_lock(lock_path) is True
+        assert lock_path.exists()
+
+    def test_fails_when_lock_held_by_running_process(self, tmp_path):
+        import os
+        lock_path = tmp_path / "test.lock"
+        lock_path.write_text(str(os.getpid()))
+        assert acquire_lock(lock_path) is False
+
+    def test_clears_stale_lock_from_dead_process(self, tmp_path):
+        lock_path = tmp_path / "test.lock"
+        # PID 1 is always init/systemd on Linux; on Windows it's the System Idle Process.
+        # Either way, it's never our process, so we can't own its lock.
+        # Use a PID that is guaranteed not to exist: max PID + 1 overflows to an invalid PID.
+        # A simpler approach: write a PID that we know is dead by using a non-existent PID.
+        lock_path.write_text("999999999")  # PID that cannot exist
+        assert acquire_lock(lock_path) is True
+        assert lock_path.exists()
+
+    def test_stale_lock_allows_subsequent_sync(self, rsync_mirror, tmp_path):
+        """A lock left by a dead process must not block the next sync."""
+        log_dir = tmp_path / "logs"
+        lock_dir = log_dir.parent / "locks"
+        lock_dir.mkdir(parents=True, exist_ok=True)
+        lock_path = lock_dir / f"{rsync_mirror.name}.lock"
+        lock_path.write_text("999999999")  # stale lock from dead process
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        with (
+            patch("xsync.sync.shutil.which", return_value="/usr/bin/rsync"),
+            patch("xsync.sync.subprocess.run", return_value=mock_result),
+        ):
+            result = sync_mirror(rsync_mirror, log_dir)
+
+        assert result.status == SyncStatus.SUCCESS
