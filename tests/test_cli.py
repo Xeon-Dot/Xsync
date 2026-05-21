@@ -3,7 +3,10 @@
 from pathlib import Path
 
 from typer.testing import CliRunner
+
 from xync.main import app
+from xync.models import SyncStatus
+from xync.sync import SyncResult
 
 runner = CliRunner()
 
@@ -339,6 +342,52 @@ class TestSync:
         result = runner.invoke(app, ["sync", "nonexistent"] + make_cfg_opt(tmp_path))
         assert result.exit_code != 0
 
+    def test_sends_finish_notifications_before_result_notifications(
+        self, tmp_path, mocker
+    ):
+        runner.invoke(
+            app,
+            [
+                "mirror",
+                "add",
+                "ubuntu",
+                "rsync://mirror.example.com/ubuntu",
+                str(tmp_path / "ubuntu"),
+            ]
+            + make_cfg_opt(tmp_path),
+        )
+        calls = []
+        mocker.patch(
+            "xync.main.sync_mirror",
+            return_value=SyncResult("ubuntu", SyncStatus.SUCCESS, 1.0),
+        )
+        mocker.patch("xync.main.notify_telegram_start")
+        mocker.patch("xync.main.notify_discord_start")
+        mocker.patch(
+            "xync.main.notify_telegram_finish",
+            lambda *args: calls.append("telegram_finish"),
+        )
+        mocker.patch(
+            "xync.main.notify_discord_finish",
+            lambda *args: calls.append("discord_finish"),
+        )
+        mocker.patch(
+            "xync.main.notify_telegram",
+            lambda *args: calls.append("telegram_result"),
+        )
+        mocker.patch(
+            "xync.main.notify_discord",
+            lambda *args: calls.append("discord_result"),
+        )
+        mocker.patch("xync.main._notify_disk_warning_if_needed")
+        mocker.patch("xync.main.purge_old_logs")
+
+        result = runner.invoke(app, ["sync", "ubuntu"] + make_cfg_opt(tmp_path))
+
+        assert result.exit_code == 0, result.output
+        assert calls.index("telegram_finish") < calls.index("telegram_result")
+        assert calls.index("discord_finish") < calls.index("discord_result")
+
 
 class TestHealth:
     def test_health_no_mirrors_warns_but_succeeds(self, tmp_path):
@@ -474,3 +523,54 @@ class TestDaemonCommands:
         assert result.exit_code == 0
         assert "SIGKILL" in result.output
         mock_stop.assert_called_once_with(mocker.ANY, True)
+
+    def test_daemon_sends_finish_notifications_before_result_notifications(
+        self, tmp_path, mocker
+    ):
+        from xync.config import load_config, save_config
+        from xync.daemon import run_daemon_loop
+        from xync.models import Mirror, MirrorType
+
+        cfg = load_config(tmp_path)
+        cfg.mirrors["ubuntu"] = Mirror(  # pyright: ignore[reportCallIssue]
+            name="ubuntu",
+            url="rsync://mirror.example.com/ubuntu",
+            local_path=str(tmp_path / "ubuntu"),
+            mirror_type=MirrorType.RSYNC,
+        )
+        save_config(cfg, tmp_path)
+        calls = []
+
+        def stop_after_cycle(_seconds, running):
+            running[0] = False
+
+        mocker.patch("xync.daemon._sleep_interruptible", stop_after_cycle)
+        mocker.patch(
+            "xync.sync.sync_mirror",
+            return_value=SyncResult("ubuntu", SyncStatus.SUCCESS, 1.0),
+        )
+        mocker.patch("xync.telegram.notify_sync_start")
+        mocker.patch("xync.discord.notify_sync_start")
+        mocker.patch(
+            "xync.telegram.notify_sync_finish",
+            lambda *args: calls.append("telegram_finish"),
+        )
+        mocker.patch(
+            "xync.discord.notify_sync_finish",
+            lambda *args: calls.append("discord_finish"),
+        )
+        mocker.patch(
+            "xync.telegram.notify_sync_result",
+            lambda *args: calls.append("telegram_result"),
+        )
+        mocker.patch(
+            "xync.discord.notify_sync_result",
+            lambda *args: calls.append("discord_result"),
+        )
+        mocker.patch("xync.utils.disk_usage_for_path", return_value=None)
+        mocker.patch("xync.sync.purge_old_logs")
+
+        run_daemon_loop(tmp_path, ["ubuntu"], interval=1)
+
+        assert calls.index("telegram_finish") < calls.index("telegram_result")
+        assert calls.index("discord_finish") < calls.index("discord_result")

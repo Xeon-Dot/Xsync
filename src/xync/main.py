@@ -15,6 +15,7 @@ import typer
 from rich import print as rprint
 from rich.console import Console
 from rich.table import Table
+
 from xync.api import format_size
 from xync.config import get_config_dir, get_config_path, load_config, save_config
 from xync.discord import notify_disk_usage_warning as notify_discord_disk_warning
@@ -473,20 +474,6 @@ def sync(
         cfg.mirrors[mirror.name] = mirror
         save_config(cfg, config_dir)
 
-        notify_telegram(
-            cfg.global_config.telegram,
-            mirror.name,
-            result.status,
-            result.duration_seconds,
-            result.error,
-        )
-        notify_discord(
-            cfg.global_config.discord,
-            mirror.name,
-            result.status,
-            result.duration_seconds,
-            result.error,
-        )
         notify_telegram_finish(
             cfg.global_config.telegram,
             mirror.name,
@@ -495,6 +482,20 @@ def sync(
             result.error,
         )
         notify_discord_finish(
+            cfg.global_config.discord,
+            mirror.name,
+            result.status,
+            result.duration_seconds,
+            result.error,
+        )
+        notify_telegram(
+            cfg.global_config.telegram,
+            mirror.name,
+            result.status,
+            result.duration_seconds,
+            result.error,
+        )
+        notify_discord(
             cfg.global_config.discord,
             mirror.name,
             result.status,

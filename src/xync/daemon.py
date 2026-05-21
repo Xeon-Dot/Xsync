@@ -309,20 +309,6 @@ def run_daemon_loop(
                     cfg.mirrors[mirror.name] = mirror
                     save_config(cfg, config_dir)
 
-                    notify_telegram(
-                        cfg.global_config.telegram,
-                        mirror.name,
-                        result.status,
-                        result.duration_seconds,
-                        result.error,
-                    )
-                    notify_discord(
-                        cfg.global_config.discord,
-                        mirror.name,
-                        result.status,
-                        result.duration_seconds,
-                        result.error,
-                    )
                     notify_telegram_finish(
                         cfg.global_config.telegram,
                         mirror.name,
@@ -331,6 +317,20 @@ def run_daemon_loop(
                         result.error,
                     )
                     notify_discord_finish(
+                        cfg.global_config.discord,
+                        mirror.name,
+                        result.status,
+                        result.duration_seconds,
+                        result.error,
+                    )
+                    notify_telegram(
+                        cfg.global_config.telegram,
+                        mirror.name,
+                        result.status,
+                        result.duration_seconds,
+                        result.error,
+                    )
+                    notify_discord(
                         cfg.global_config.discord,
                         mirror.name,
                         result.status,
