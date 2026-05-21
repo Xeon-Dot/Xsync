@@ -1,350 +1,467 @@
 # xync
 
-> **Linux mirror synchronization and management CLI tool**
+Linux 미러 저장소를 동기화하고 관리하는 CLI 도구입니다.
+
+`xync`는 `rsync`, `wget` 기반 미러링을 설정 파일로 관리하고, 상태 확인·로그 조회·데몬 실행·REST API·Telegram/Discord 알림까지 제공합니다.
+
+> [!NOTE]
 > Built with Python · [uv](https://docs.astral.sh/uv/) · [Typer](https://typer.tiangolo.com/) · [Rich](https://rich.readthedocs.io/) · [FastAPI](https://fastapi.tiangolo.com/)
 
 ---
 
-## Features
+## 주요 기능
 
-### Sync
-
-| Feature | Details |
-| --- | --- |
-| **rsync mirrors** | Full rsync support with per-mirror options, bandwidth limiting, and progress tracking |
-| **HTTP / FTP mirrors** | wget-based mirroring for HTTP, HTTPS, and FTP sources |
-| **Mirror diff** | `xync mirror diff` — preview changes before syncing via `rsync --dry-run --itemize-changes` |
-| **Parallel sync** | Concurrent mirror syncing via `ThreadPoolExecutor` (configurable `parallel_jobs`) |
-| **Dry-run & verbose** | `--dry-run` prints commands without executing; `--verbose` streams live subprocess output |
-| **Per-mirror locking** | Atomic lock files prevent overlapping sync runs of the same mirror |
-
-### Daemon
-
-| Feature | Details |
-| --- | --- |
-| **Background sync** | Double-fork daemon with PID file management and graceful shutdown on SIGTERM/SIGINT |
-| **Scheduling** | Interval-based (seconds) or cron-based (e.g. `"0 */6 * * *"`) scheduling via croniter |
-| **Config hot-reload** | Re-reads config between sync cycles — no restart needed after config changes |
-
-### API
-
-| Feature | Details |
-| --- | --- |
-| **REST endpoints** | `GET /api/status`, `/api/mirrors`, `/api/mirrors/{name}`, `/api/mirrors/{name}/size` |
-| **Live sync state** | Real-time tracking of currently syncing mirror and status accessible via API |
-| **Standalone or threaded** | Run the API server standalone or embedded in the daemon as a background thread |
-
-### Notifications
-
-| Feature | Details |
-| --- | --- |
-| **Telegram & Discord** | Alerts via Telegram Bot API and Discord Webhooks with per-channel notification toggles |
-| **Trigger events** | Configurable alerts for start, success, failure, finish, and progress milestones (every 10%) |
-| **Disk warnings** | Automatic alert when mirror filesystem exceeds configurable threshold |
-| **Test command** | `xync notify test` to verify notification channel configuration before relying on them |
-
-### Management
-
-| Feature | Details |
-| --- | --- |
-| **TOML config** | Human-readable `~/.config/xync/config.toml` with schema versioning for future migrations |
-| **CLI config editor** | `xync config set` and `xync config validate` — no need to edit TOML by hand |
-| **Health checks** | Validate tools on PATH, URL schemes, directory permissions, and disk usage |
-| **Sync logs** | Per-run timestamped log files with automatic rotation and in-CLI viewing (`xync log`) |
-| **Size trends** | Track previous vs current mirror size delta in `xync status` |
-| **Rich output** | Colour-coded tables, status indicators, and progress bars |
-| **Shell completion** | bash / zsh / fish via Typer |
-| **Standalone binary** | Single-file executable built with PyInstaller — no Python required at runtime |
+- **rsync 미러 동기화**: `rsync://` 소스 동기화, 옵션 커스터마이징, 대역폭 제한 지원
+- **HTTP/HTTPS/FTP 미러 동기화**: `wget` 기반 미러링 지원
+- **미러 변경 미리보기**: `xync mirror diff`로 `rsync --dry-run --itemize-changes` 결과 확인
+- **병렬 동기화**: `parallel_jobs` 설정으로 여러 미러를 동시에 동기화
+- **백그라운드 데몬**: interval 또는 cron schedule 기반 자동 동기화
+- **REST API**: 미러 목록, 상태, 크기 정보를 HTTP API로 조회
+- **알림**: Telegram Bot API, Discord Webhook 알림 지원
+- **상태/로그 관리**: 마지막 동기화 상태, 크기 변화, 실행 로그 조회
+- **헬스 체크**: 필수 도구, 경로 권한, URL 스킴, 디스크 사용률 검사
+- **Rich CLI 출력**: 테이블, 색상, 상태 표시를 활용한 읽기 쉬운 출력
 
 ---
 
-## Requirements
+## 요구 사항
 
-- `rsync` (for rsync mirrors)
-- `wget` (for HTTP/FTP mirrors)
+### 런타임
 
-For building from source:
-- Python >= 3.11
-- [uv](https://docs.astral.sh/uv/) package manager
+- Linux 환경
+<!--- Python `>= 3.11`-->
+- [`uv`](https://docs.astral.sh/uv/) 패키지/툴 매니저
+- `rsync` — rsync 미러 사용 시 필요
+- `wget` — HTTP/HTTPS/FTP 미러 사용 시 필요
 
 ---
 
-## Installation
+## 설치
 
-### Option 1: Pre-built Executable (Recommended)
+### 권장: uv tool로 설치
 
-Download the latest release for your platform:
-
-**Linux AMD64 (x86_64):**
 ```bash
-wget https://github.com/xeon-dot/xync/releases/latest/download/xync-linux-amd64.tar.gz
-tar -xzf xync-linux-amd64.tar.gz
-sudo mv xync /usr/local/bin/
-xync --version
+uv tool install xync
+xync --help
 ```
 
-**Linux ARM64 (aarch64):**
+업데이트:
+
 ```bash
-wget https://github.com/xeon-dot/xync/releases/latest/download/xync-linux-arm64.tar.gz
-tar -xzf xync-linux-arm64.tar.gz
-sudo mv xync /usr/local/bin/
-xync --version
+uv tool upgrade xync
 ```
 
-**Verify checksum (optional):**
+제거:
+
 ```bash
-wget https://github.com/xeon-dot/xync/releases/latest/download/xync-linux-amd64.tar.gz.sha256
-sha256sum -c xync-linux-amd64.tar.gz.sha256
+uv tool uninstall xync
 ```
 
-> **Note:** The executable is self-contained and doesn't require Python to be installed. However, you still need `rsync` and `wget` installed on your system for mirror synchronization.
+> [!TIP]
+> `uv tool install`은 CLI 애플리케이션을 격리된 환경에 설치하고 실행 파일을 PATH에 노출합니다. PATH 설정이 필요하다는 안내가 나오면 `uv tool update-shell`을 실행하거나 uv가 안내하는 경로를 셸 PATH에 추가하세요.
 
-### Option 2: Install from Source
+### 소스에서 설치
 
 ```bash
-# Clone the repo
 git clone https://github.com/xeon-dot/xync.git
 cd xync
-
-# Install with uv
-uv sync
-
-# Run directly
-uv run xync --help
-
-# Or install the entry-point globally
 uv tool install .
 xync --help
 ```
 
----
-
-## Quick Start
+### 개발용 실행
 
 ```bash
-# 1. Initialise configuration
+git clone https://github.com/xeon-dot/xync.git
+cd xync
+uv sync
+uv run xync --help
+```
+
+---
+
+## 빠른 시작
+
+```bash
+# 1. 설정 파일 초기화
 xync init
 
-# 2. Add mirrors
-xync mirror add ubuntu  rsync://mirror.kakao.com/ubuntu    /srv/mirrors/ubuntu
-xync mirror add debian  http://ftp.debian.org/debian       /srv/mirrors/debian --type http
+# 2. rsync 미러 추가
+xync mirror add ubuntu rsync://mirror.kakao.com/ubuntu /srv/mirrors/ubuntu
 
-# 3. List mirrors
+# 3. HTTP 미러 추가
+xync mirror add debian http://ftp.debian.org/debian /srv/mirrors/debian --type http
+
+# 4. 등록된 미러 확인
 xync mirror list
 
-# 4. Sync all enabled mirrors
+# 5. 동기화 실행
 xync sync
 
-# 5. Check status
+# 6. 상태 확인
+xync status
+```
+
+설정 파일은 기본적으로 다음 위치에 생성됩니다.
+
+```text
+~/.config/xync/config.toml
+```
+
+다른 설정 디렉터리를 쓰고 싶다면 모든 명령에 `--config-dir` 또는 `-C`를 사용할 수 있습니다.
+
+```bash
+xync status --config-dir /etc/xync
+```
+
+환경 변수로도 지정할 수 있습니다.
+
+```bash
+export xync_CONFIG_DIR=/etc/xync
 xync status
 ```
 
 ---
 
-## Commands
+## 명령어
 
 ### `xync init`
 
-Initialise the xync configuration directory (`~/.config/xync/`).
+설정 디렉터리와 기본 설정 파일을 생성합니다.
 
-```shell
-xync init [--config-dir PATH]
+```bash
+xync init
+xync init --config-dir /etc/xync
 ```
 
 ---
 
-### `xync mirror`
+## 미러 관리
 
-#### `mirror add`
+### `xync mirror add`
 
-```shell
+미러를 추가합니다.
+
+```bash
 xync mirror add NAME URL LOCAL_PATH [OPTIONS]
-
-Options:
-  --type       rsync | http | ftp          (default: rsync)
-  --description TEXT
-  --bwlimit    Bandwidth limit for rsync   (e.g. "10m" for 10 MB/s)
-  --rsync-opts Space-separated rsync options (overrides defaults)
 ```
 
-#### `mirror remove`
+예시:
 
-```shell
-xync mirror remove NAME [--yes]
+```bash
+xync mirror add ubuntu rsync://mirror.kakao.com/ubuntu /srv/mirrors/ubuntu
+xync mirror add debian http://ftp.debian.org/debian /srv/mirrors/debian --type http
+xync mirror add arch rsync://mirror.example.org/archlinux /srv/mirrors/arch --bwlimit 50m
 ```
 
-#### `mirror list`
+옵션:
 
-List all configured mirrors in a table.
+| 옵션                  | 설명                                 |
+| --------------------- | ------------------------------------ |
+| `--type`, `-t`        | 미러 타입: `rsync`, `http`, `ftp`    |
+| `--description`, `-d` | 미러 설명                            |
+| `--bwlimit`, `-b`     | rsync 대역폭 제한. 예: `10m`, `50m`  |
+| `--rsync-opts`        | 기본 rsync 옵션을 대체할 옵션 문자열 |
 
-#### `mirror show NAME`
+미러 이름은 영문/숫자/하이픈/언더스코어만 사용할 수 있습니다.
 
-Show detailed information about a single mirror.
+### `xync mirror list`
 
-#### `mirror enable / disable NAME`
+등록된 미러 목록을 출력합니다.
 
-Enable or disable a mirror (disabled mirrors are skipped during sync).
+```bash
+xync mirror list
+```
 
-#### `mirror diff NAME`
+### `xync mirror show`
 
-Show rsync dry-run diff for a mirror (what would change). Only works for rsync mirrors.
+특정 미러의 상세 설정을 출력합니다.
+
+```bash
+xync mirror show ubuntu
+```
+
+### `xync mirror enable` / `disable`
+
+미러를 활성화하거나 비활성화합니다. 비활성화된 미러는 전체 동기화에서 제외됩니다.
+
+```bash
+xync mirror disable ubuntu
+xync mirror enable ubuntu
+```
+
+### `xync mirror diff`
+
+rsync 미러에서 실제 동기화 전에 변경될 항목을 확인합니다.
+
+```bash
+xync mirror diff ubuntu
+```
+
+> `mirror diff`는 rsync 미러에서만 동작합니다.
+
+### `xync mirror remove`
+
+미러 설정을 제거합니다.
+
+```bash
+xync mirror remove ubuntu
+xync mirror remove ubuntu --yes
+```
 
 ---
+
+## 동기화
 
 ### `xync sync`
 
-```shell
-xync sync [NAME ...] [--dry-run] [--verbose]
+활성화된 전체 미러 또는 지정한 미러를 동기화합니다.
+
+```bash
+# 전체 활성 미러 동기화
+xync sync
+
+# 특정 미러만 동기화
+xync sync ubuntu
+
+# 여러 미러 동기화
+xync sync ubuntu debian
 ```
 
-Sync one or all enabled mirrors.
+옵션:
 
-| Option | Short | Description |
-| --- | --- | --- |
-| `--dry-run` | `-n` | Print the sync command without executing |
-| `--verbose` | `-v` | Print subprocess output to console |
+| 옵션              | 설명                              |
+| ----------------- | --------------------------------- |
+| `--dry-run`, `-n` | 실제 실행 없이 동기화 명령만 출력 |
+| `--verbose`, `-v` | 하위 프로세스 출력을 콘솔에 표시  |
+
+예시:
+
+```bash
+xync sync ubuntu --dry-run
+xync sync ubuntu --verbose
+```
 
 ---
+
+## 상태, 로그, 점검
 
 ### `xync status`
 
-```shell
-xync status [NAME ...]
+미러의 마지막 동기화 상태, 시각, 크기, 크기 변화량을 출력합니다.
+
+```bash
+xync status
+xync status ubuntu debian
 ```
 
-Show the last sync status, timestamp, and size for mirrors.
+### `xync log`
 
----
+특정 미러의 최신 동기화 로그를 출력합니다.
+
+```bash
+xync log ubuntu
+xync log ubuntu --lines 100
+```
 
 ### `xync health`
 
-```shell
-xync health [NAME ...]
+설정 파일, 필수 도구, URL 스킴, 로컬 경로 권한, 디스크 사용률을 점검합니다.
+
+```bash
+xync health
+xync health ubuntu
 ```
 
-Check configuration, required tools, mirror paths, and disk usage thresholds.
+### `xync config validate`
+
+현재 설정의 유효성을 검사합니다.
+
+```bash
+xync config validate
+```
 
 ---
 
-### `xync log NAME`
+## 데몬
 
-```shell
-xync log NAME [--lines N]
+`xync daemon`은 백그라운드에서 주기적으로 미러를 동기화합니다.
+
+### 시작
+
+```bash
+xync daemon start
 ```
 
-Print the latest sync log for a mirror (default: last 50 lines).
+특정 미러만 대상으로 실행:
+
+```bash
+xync daemon start ubuntu debian
+```
+
+동기화 주기를 명령에서 지정:
+
+```bash
+xync daemon start --interval 3600
+```
+
+API 서버를 함께 실행:
+
+```bash
+xync daemon start --api --api-port 58080
+```
+
+### 상태 확인
+
+```bash
+xync daemon status
+```
+
+### 중지
+
+```bash
+xync daemon stop
+xync daemon stop --force
+```
+
+### 재시작
+
+```bash
+xync daemon restart
+xync daemon restart --interval 1800 --api
+```
+
+데몬은 기본적으로 설정 디렉터리에 PID 파일과 로그 파일을 생성합니다.
 
 ---
 
-### `xync daemon`
+## REST API
 
-Run background sync on a schedule.
+API 서버는 미러 상태를 HTTP로 조회할 수 있게 합니다.
 
-#### `daemon start [NAME ...]`
+### 단독 실행
 
-```shell
-xync daemon start [OPTIONS]
-
-Options:
-  --interval SECONDS   Sync interval (overrides daemon_interval config)
-  --api                Enable API server alongside daemon
-  --api-port PORT      API server port (overrides api_port config)
+```bash
+xync api start
+xync api start --port 58080
 ```
 
-Detaches from the terminal (double-fork). PID file at `{config_dir}/xync-daemon.pid`.
+### 상태 확인 / 중지
 
-Supports two scheduling modes:
-- **Interval-based**: sleeps `daemon_interval` seconds between cycles (default: 3600)
-- **Cron-based**: uses `daemon_schedule` cron expression (e.g. `"0 */6 * * *"`)
-
-#### `daemon stop`
-
-```shell
-xync daemon stop [--force]
+```bash
+xync api status
+xync api stop
+xync api stop --force
 ```
 
-`--force` sends SIGKILL instead of SIGTERM.
+### 엔드포인트
 
-#### `daemon status`
+| Method | Path                       | 설명                       |
+| ------ | -------------------------- | -------------------------- |
+| `GET`  | `/api/status`              | 전체 미러 상태와 데몬 상태 |
+| `GET`  | `/api/mirrors`             | 미러 이름 목록             |
+| `GET`  | `/api/mirrors/{name}`      | 특정 미러 상태             |
+| `GET`  | `/api/mirrors/{name}/size` | 특정 미러 크기 정보        |
 
-Show whether the background sync daemon is running.
+예시:
 
-#### `daemon restart [NAME ...]`
-
-Restart the daemon. Same options as `daemon start` plus `--force`.
+```bash
+curl http://127.0.0.1:58080/api/status
+```
 
 ---
 
-### `xync api`
+## 알림
 
-Run a REST API server for monitoring.
+Telegram과 Discord 알림을 설정할 수 있습니다.
 
-#### `api start`
+지원 이벤트:
 
-```shell
-xync api start [--port PORT]
+- 동기화 성공
+- 동기화 실패
+- 동기화 시작
+- 동기화 종료
+- 진행률 10% 단위 알림
+- 디스크 사용률 임계치 초과 경고
+
+### Telegram 설정
+
+```bash
+xync config set telegram.bot_token "123456:ABC-DEF"
+xync config set telegram.chat_id "-100123456"
 ```
 
-Default port: `58080`. PID file at `{config_dir}/xync-api.pid`.
+### Discord 설정
 
-**Endpoints:**
-
-| Method | Path | Description |
-| --- | --- | --- |
-| `GET` | `/api/status` | Full status of all mirrors and daemon state |
-| `GET` | `/api/mirrors` | List of mirror names |
-| `GET` | `/api/mirrors/{name}` | Single mirror status |
-| `GET` | `/api/mirrors/{name}/size` | Mirror size info |
-
-#### `api stop`
-
-```shell
-xync api stop [--force]
+```bash
+xync config set discord.webhook_url "https://discord.com/api/webhooks/..."
 ```
 
-#### `api status`
+### 알림 옵션 변경
 
-Show whether the API server is running.
-
----
-
-### `xync notify`
-
-#### `notify test`
-
-```shell
-xync notify test [telegram|discord|all]
+```bash
+xync config set telegram.notify_on_start true
+xync config set telegram.notify_on_progress true
+xync config set discord.notify_on_failure true
 ```
 
-Send a test notification through configured channels.
+### 테스트 알림
+
+```bash
+xync notify test
+xync notify test telegram
+xync notify test discord
+```
 
 ---
 
-### `xync config`
+## 설정
 
-#### `config show`
+전역 설정은 `xync config set KEY VALUE`로 변경할 수 있습니다.
 
-Display current global configuration.
+```bash
+xync config show
+xync config set parallel_jobs 4
+xync config set daemon_interval 3600
+xync config set daemon_schedule "0 */6 * * *"
+xync config set disk_usage_warning_percent 85
+```
 
-#### `config set KEY VALUE`
+### 주요 설정 키
 
-Update a global config value. See [Configuration](#configuration) for valid keys.
+| 키                           | 기본값                 | 설명                            |
+| ---------------------------- | ---------------------- | ------------------------------- |
+| `default_rsync_options`      | `-avz --delete`        | 기본 rsync 옵션                 |
+| `log_dir`                    | 설정 디렉터리의 `logs` | 동기화 로그 저장 경로           |
+| `max_log_files`              | `30`                   | 미러별 보관할 최대 로그 파일 수 |
+| `parallel_jobs`              | `1`                    | 병렬 동기화 작업 수             |
+| `daemon_interval`            | `3600`                 | 데몬 동기화 주기(초)            |
+| `daemon_schedule`            | 비어 있음              | cron 표현식 기반 스케줄         |
+| `api_enabled`                | `false`                | 데몬 시작 시 API 서버 함께 실행 |
+| `api_port`                   | `58080`                | API 서버 포트                   |
+| `disk_usage_warning_percent` | `90`                   | 디스크 사용률 경고 임계치       |
+| `telegram.bot_token`         | 없음                   | Telegram Bot API 토큰           |
+| `telegram.chat_id`           | 없음                   | Telegram 채팅 ID                |
+| `discord.webhook_url`        | 없음                   | Discord Webhook URL             |
 
-#### `config validate`
+알림 플래그는 Telegram/Discord 각각에 대해 설정할 수 있습니다.
 
-Validate the current configuration and report issues (checks tools, paths, Telegram/Discord config consistency).
+| 키 패턴                | 기본값  | 설명                 |
+| ---------------------- | ------- | -------------------- |
+| `*.notify_on_success`  | `true`  | 성공 시 알림         |
+| `*.notify_on_failure`  | `true`  | 실패 시 알림         |
+| `*.notify_on_start`    | `false` | 시작 시 알림         |
+| `*.notify_on_finish`   | `false` | 종료 시 알림         |
+| `*.notify_on_progress` | `false` | 진행률 10% 단위 알림 |
 
----
+예시:
 
-## Global Option
+```bash
+xync config set telegram.notify_on_success true
+xync config set discord.notify_on_progress false
+```
 
-All commands accept `--config-dir PATH` (or `xync_CONFIG_DIR` env var) to use a non-default configuration directory.
-
----
-
-## Configuration
-
-Config is stored at `~/.config/xync/config.toml`:
+### 설정 파일 예시
 
 ```toml
 version = 1
@@ -361,8 +478,8 @@ api_port = 58080
 disk_usage_warning_percent = 90
 
 [global.telegram]
-bot_token = "123456:ABC-DEF"
-chat_id = "-100123456"
+bot_token = ""
+chat_id = ""
 notify_on_success = true
 notify_on_failure = true
 notify_on_start = false
@@ -370,7 +487,7 @@ notify_on_finish = false
 notify_on_progress = false
 
 [global.discord]
-webhook_url = "https://discord.com/api/webhooks/123/token"
+webhook_url = ""
 notify_on_success = true
 notify_on_failure = true
 notify_on_start = false
@@ -382,60 +499,124 @@ url = "rsync://mirror.kakao.com/ubuntu"
 local_path = "/srv/mirrors/ubuntu"
 mirror_type = "rsync"
 enabled = true
-description = "Ubuntu LTS mirror"
+description = "Ubuntu mirror"
 rsync_options = ["-avz", "--delete"]
 http_options = []
 bandwidth_limit = "50m"
-last_status = "success"
+last_status = "never"
 ```
-
-### Config Keys
-
-| Key | Type | Default | Description |
-| --- | --- | --- | --- |
-| `default_rsync_options` | list (space-separated) | `["-avz", "--delete"]` | Default rsync flags |
-| `log_dir` | string | `""` | Custom log directory |
-| `max_log_files` | integer | `30` | Max log files per mirror |
-| `parallel_jobs` | integer | `1` | Parallel mirror sync jobs |
-| `daemon_interval` | integer | `3600` | Daemon sync interval in seconds |
-| `daemon_schedule` | string | `""` | Cron expression for daemon scheduling |
-| `api_enabled` | boolean | `false` | Enable API server with daemon |
-| `api_port` | integer | `58080` | API server port |
-| `disk_usage_warning_percent` | integer | `90` | Disk usage warning threshold (%) |
-| `telegram.bot_token` | string | | Telegram Bot API token |
-| `telegram.chat_id` | string | | Telegram chat ID |
-| `telegram.notify_on_success` | boolean | `true` | Alert on sync success |
-| `telegram.notify_on_failure` | boolean | `true` | Alert on sync failure |
-| `telegram.notify_on_start` | boolean | `false` | Alert when sync starts |
-| `telegram.notify_on_finish` | boolean | `false` | Alert when sync finishes |
-| `telegram.notify_on_progress` | boolean | `false` | Alert at 10% progress milestones |
-| `discord.webhook_url` | string | | Discord Webhook URL |
-| `discord.notify_on_success` | boolean | `true` | Alert on sync success |
-| `discord.notify_on_failure` | boolean | `true` | Alert on sync failure |
-| `discord.notify_on_start` | boolean | `false` | Alert when sync starts |
-| `discord.notify_on_finish` | boolean | `false` | Alert when sync finishes |
-| `discord.notify_on_progress` | boolean | `false` | Alert at 10% progress milestones |
 
 ---
 
-## Development
+## 스케줄링
+
+데몬은 두 가지 방식으로 동작할 수 있습니다.
+
+### Interval 방식
+
+`daemon_interval` 초마다 동기화합니다.
 
 ```bash
-# Install dev dependencies
+xync config set daemon_interval 3600
+xync daemon start
+```
+
+### Cron 방식
+
+`daemon_schedule`에 cron 표현식을 설정하면 해당 스케줄을 사용합니다.
+
+```bash
+xync config set daemon_schedule "0 */6 * * *"
+xync daemon start
+```
+
+예시 cron 표현식:
+
+| 표현식        | 의미              |
+| ------------- | ----------------- |
+| `0 */6 * * *` | 6시간마다 정각    |
+| `0 3 * * *`   | 매일 03:00        |
+| `30 2 * * 0`  | 매주 일요일 02:30 |
+
+---
+
+## 셸 자동완성
+
+Typer 기반 자동완성을 사용할 수 있습니다.
+
+```bash
+xync --install-completion
+```
+
+지원 셸은 Typer가 감지합니다. 설치 후 새 셸을 열거나 셸 설정 파일을 다시 로드하세요.
+
+---
+
+## 개발
+
+```bash
+# 의존성 설치
 uv sync
 
-# Run tests
+# CLI 실행
+uv run xync --help
+
+# 테스트
 uv run pytest
 
-# Run a specific test file
+# 특정 테스트 실행
 uv run pytest tests/test_cli.py -v
 
-# Lint
+# 린트
 uv run ruff check src/ tests/
 ```
 
+빌드:
+
+```bash
+uv build
+```
+
 ---
 
-## License
+## 문제 해결
+
+### `rsync not found on PATH`
+
+rsync 미러를 사용하려면 `rsync`가 설치되어 있어야 합니다.
+
+```bash
+sudo apt install -y rsync
+```
+
+### `wget not found on PATH`
+
+HTTP/HTTPS/FTP 미러를 사용하려면 `wget`이 설치되어 있어야 합니다.
+
+```bash
+sudo apt install -y wget
+```
+
+### 미러 경로 권한 오류
+
+동기화 대상 경로의 부모 디렉터리가 존재하고, 현재 사용자가 쓸 수 있어야 합니다.
+
+```bash
+sudo mkdir -p /srv/mirrors/ubuntu
+sudo chown -R "$USER:$USER" /srv/mirrors/ubuntu
+xync health ubuntu
+```
+
+### 설정 확인
+
+```bash
+xync config show
+xync config validate
+xync health
+```
+
+---
+
+## 라이선스
 
 [AGPL-3.0-or-later](LICENSE)
