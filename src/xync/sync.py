@@ -1,4 +1,4 @@
-"""Mirror synchronization engine for Xsync."""
+"""Mirror synchronization engine for xync."""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
-from xsync.models import Mirror, MirrorType, SyncStatus
-from xsync.utils import get_directory_size
+from xync.models import Mirror, MirrorType, SyncStatus
+from xync.utils import get_directory_size
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +145,7 @@ def sync_mirror(
         )
 
     # Late import to avoid circular dependency at module load time.
-    from xsync import api as _api  # noqa: PLC0415
+    from xync import api as _api  # noqa: PLC0415
 
     _api.set_current_mirror(mirror.name)
     _api.set_sync_status(mirror.name, SyncStatus.RUNNING)
@@ -184,7 +184,7 @@ def sync_mirror(
 
         try:
             with log_path.open("w", encoding="utf-8") as log_fh:
-                log_fh.write(f"# Xsync log — {mirror.name}\n")
+                log_fh.write(f"# xync log — {mirror.name}\n")
                 log_fh.write(f"# Started: {start.isoformat()}\n")
                 log_fh.write(f"# Command: {' '.join(cmd)}\n\n")
 

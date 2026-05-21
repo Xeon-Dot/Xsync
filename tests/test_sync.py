@@ -1,11 +1,10 @@
-"""Tests for xsync.sync."""
+"""Tests for xync.sync."""
 
 from unittest.mock import MagicMock, patch
 
 import pytest
-
-from xsync.models import Mirror, MirrorType, SyncStatus
-from xsync.sync import (
+from xync.models import Mirror, MirrorType, SyncStatus
+from xync.sync import (
     _build_rsync_command,
     _build_wget_command,
     _inject_rsync_progress_flag,
@@ -20,7 +19,7 @@ def rsync_mirror():
     return Mirror(  # pyright: ignore[reportCallIssue]
         name="ubuntu",
         url="rsync://mirror.example.com/ubuntu",
-        local_path="/tmp/xsync_test_ubuntu",
+        local_path="/tmp/xync_test_ubuntu",
         mirror_type=MirrorType.RSYNC,
     )
 
@@ -30,14 +29,14 @@ def http_mirror():
     return Mirror(  # pyright: ignore[reportCallIssue]
         name="debian",
         url="http://ftp.debian.org/debian",
-        local_path="/tmp/xsync_test_debian",
+        local_path="/tmp/xync_test_debian",
         mirror_type=MirrorType.HTTP,
     )
 
 
 class TestBuildCommand:
     def test_rsync_basic(self, rsync_mirror):
-        with patch("xsync.sync.shutil.which", return_value="/usr/bin/rsync"):
+        with patch("xync.sync.shutil.which", return_value="/usr/bin/rsync"):
             cmd = _build_rsync_command(rsync_mirror)
         assert cmd[0] == "rsync"
         assert "-avz" in cmd
@@ -47,17 +46,17 @@ class TestBuildCommand:
 
     def test_rsync_with_bwlimit(self, rsync_mirror):
         rsync_mirror.bandwidth_limit = "10m"
-        with patch("xsync.sync.shutil.which", return_value="/usr/bin/rsync"):
+        with patch("xync.sync.shutil.which", return_value="/usr/bin/rsync"):
             cmd = _build_rsync_command(rsync_mirror)
         assert "--bwlimit=10m" in cmd
 
     def test_rsync_not_installed(self, rsync_mirror):
-        with patch("xsync.sync.shutil.which", return_value=None):
+        with patch("xync.sync.shutil.which", return_value=None):
             with pytest.raises(FileNotFoundError, match="rsync"):
                 _build_rsync_command(rsync_mirror)
 
     def test_wget_basic(self, http_mirror):
-        with patch("xsync.sync.shutil.which", return_value="/usr/bin/wget"):
+        with patch("xync.sync.shutil.which", return_value="/usr/bin/wget"):
             cmd = _build_wget_command(http_mirror)
         assert cmd[0] == "wget"
         assert "--mirror" in cmd
@@ -65,14 +64,14 @@ class TestBuildCommand:
         assert http_mirror.local_path in cmd
 
     def test_wget_not_installed(self, http_mirror):
-        with patch("xsync.sync.shutil.which", return_value=None):
+        with patch("xync.sync.shutil.which", return_value=None):
             with pytest.raises(FileNotFoundError, match="wget"):
                 _build_wget_command(http_mirror)
 
 
 class TestSyncMirror:
     def test_dry_run(self, rsync_mirror, tmp_path):
-        with patch("xsync.sync.shutil.which", return_value="/usr/bin/rsync"):
+        with patch("xync.sync.shutil.which", return_value="/usr/bin/rsync"):
             result = sync_mirror(rsync_mirror, tmp_path / "logs", dry_run=True)
         assert result.status == SyncStatus.PENDING
         assert result.mirror_name == "ubuntu"
@@ -82,8 +81,8 @@ class TestSyncMirror:
         mock_result = MagicMock()
         mock_result.returncode = 0
         with (
-            patch("xsync.sync.shutil.which", return_value="/usr/bin/rsync"),
-            patch("xsync.sync.subprocess.run", return_value=mock_result),
+            patch("xync.sync.shutil.which", return_value="/usr/bin/rsync"),
+            patch("xync.sync.subprocess.run", return_value=mock_result),
         ):
             result = sync_mirror(rsync_mirror, tmp_path / "logs")
         assert result.status == SyncStatus.SUCCESS
@@ -95,8 +94,8 @@ class TestSyncMirror:
         mock_result = MagicMock()
         mock_result.returncode = 23
         with (
-            patch("xsync.sync.shutil.which", return_value="/usr/bin/rsync"),
-            patch("xsync.sync.subprocess.run", return_value=mock_result),
+            patch("xync.sync.shutil.which", return_value="/usr/bin/rsync"),
+            patch("xync.sync.subprocess.run", return_value=mock_result),
         ):
             result = sync_mirror(rsync_mirror, tmp_path / "logs")
         assert result.status == SyncStatus.FAILED
@@ -104,7 +103,7 @@ class TestSyncMirror:
         assert result.size_bytes is None
 
     def test_command_not_found(self, rsync_mirror, tmp_path):
-        with patch("xsync.sync.shutil.which", return_value=None):
+        with patch("xync.sync.shutil.which", return_value=None):
             result = sync_mirror(rsync_mirror, tmp_path / "logs")
         assert result.status == SyncStatus.FAILED
         assert result.error is not None
@@ -182,8 +181,8 @@ class TestSyncMirrorWithProgress:
         mock_proc.__exit__ = MagicMock(return_value=False)
 
         with (
-            patch("xsync.sync.shutil.which", return_value="/usr/bin/rsync"),
-            patch("xsync.sync.subprocess.Popen", return_value=mock_proc),
+            patch("xync.sync.shutil.which", return_value="/usr/bin/rsync"),
+            patch("xync.sync.subprocess.Popen", return_value=mock_proc),
         ):
             result = sync_mirror(
                 rsync_mirror,
@@ -200,9 +199,9 @@ class TestSyncMirrorWithProgress:
         mock_result = MagicMock()
         mock_result.returncode = 0
         with (
-            patch("xsync.sync.shutil.which", return_value="/usr/bin/rsync"),
-            patch("xsync.sync.subprocess.run", return_value=mock_result) as mock_run,
-            patch("xsync.sync.subprocess.Popen") as mock_popen,
+            patch("xync.sync.shutil.which", return_value="/usr/bin/rsync"),
+            patch("xync.sync.subprocess.run", return_value=mock_result) as mock_run,
+            patch("xync.sync.subprocess.Popen") as mock_popen,
         ):
             sync_mirror(rsync_mirror, tmp_path / "logs")
         mock_run.assert_called_once()
@@ -213,9 +212,9 @@ class TestSyncMirrorWithProgress:
         mock_result = MagicMock()
         mock_result.returncode = 0
         with (
-            patch("xsync.sync.shutil.which", return_value="/usr/bin/wget"),
-            patch("xsync.sync.subprocess.run", return_value=mock_result) as mock_run,
-            patch("xsync.sync.subprocess.Popen") as mock_popen,
+            patch("xync.sync.shutil.which", return_value="/usr/bin/wget"),
+            patch("xync.sync.subprocess.run", return_value=mock_result) as mock_run,
+            patch("xync.sync.subprocess.Popen") as mock_popen,
         ):
             sync_mirror(http_mirror, tmp_path / "logs", on_progress=lambda pct: None)
         mock_run.assert_called_once()
@@ -230,6 +229,7 @@ class TestAcquireLock:
 
     def test_fails_when_lock_held_by_running_process(self, tmp_path):
         import os
+
         lock_path = tmp_path / "test.lock"
         lock_path.write_text(str(os.getpid()))
         assert acquire_lock(lock_path) is False
@@ -255,8 +255,8 @@ class TestAcquireLock:
         mock_result = MagicMock()
         mock_result.returncode = 0
         with (
-            patch("xsync.sync.shutil.which", return_value="/usr/bin/rsync"),
-            patch("xsync.sync.subprocess.run", return_value=mock_result),
+            patch("xync.sync.shutil.which", return_value="/usr/bin/rsync"),
+            patch("xync.sync.subprocess.run", return_value=mock_result),
         ):
             result = sync_mirror(rsync_mirror, log_dir)
 

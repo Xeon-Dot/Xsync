@@ -1,11 +1,10 @@
-"""Tests for xsync.telegram notification module."""
+"""Tests for xync.telegram notification module."""
 
 from unittest.mock import MagicMock, patch
 
 import httpx
-
-from xsync.models import SyncStatus, TelegramConfig
-from xsync.telegram import (
+from xync.models import SyncStatus, TelegramConfig
+from xync.telegram import (
     notify_disk_usage_warning,
     notify_sync_finish,
     notify_sync_progress,
@@ -20,9 +19,7 @@ class TestSendTelegramMessage:
     def test_successful_send(self):
         mock_response = MagicMock()
         mock_response.raise_for_status.return_value = None
-        with patch(
-            "xsync.telegram.httpx.post", return_value=mock_response
-        ) as mock_post:
+        with patch("xync.telegram.httpx.post", return_value=mock_response) as mock_post:
             result = send_telegram_message("token123", "chat456", "Hello!")
         assert result is True
         mock_post.assert_called_once()
@@ -32,7 +29,7 @@ class TestSendTelegramMessage:
 
     def test_http_error_returns_false(self):
         with patch(
-            "xsync.telegram.httpx.post",
+            "xync.telegram.httpx.post",
             side_effect=httpx.HTTPError("network error"),
         ):  # noqa: E501
             result = send_telegram_message("token", "chat", "msg")
@@ -41,9 +38,7 @@ class TestSendTelegramMessage:
     def test_uses_correct_api_url(self):
         mock_response = MagicMock()
         mock_response.raise_for_status.return_value = None
-        with patch(
-            "xsync.telegram.httpx.post", return_value=mock_response
-        ) as mock_post:
+        with patch("xync.telegram.httpx.post", return_value=mock_response) as mock_post:
             send_telegram_message("mytoken", "mychat", "test")
         url = mock_post.call_args[0][0]
         assert "mytoken" in url
@@ -63,31 +58,31 @@ class TestNotifySyncResult:
 
     def test_skips_when_no_token(self):
         cfg = TelegramConfig(bot_token=None, chat_id="chat")
-        with patch("xsync.telegram.send_telegram_message") as mock_send:
+        with patch("xync.telegram.send_telegram_message") as mock_send:
             notify_sync_result(cfg, "ubuntu", SyncStatus.SUCCESS, 10.0)
         mock_send.assert_not_called()
 
     def test_skips_when_no_chat_id(self):
         cfg = TelegramConfig(bot_token="token", chat_id=None)
-        with patch("xsync.telegram.send_telegram_message") as mock_send:
+        with patch("xync.telegram.send_telegram_message") as mock_send:
             notify_sync_result(cfg, "ubuntu", SyncStatus.SUCCESS, 10.0)
         mock_send.assert_not_called()
 
     def test_skips_success_when_notify_on_success_false(self):
         cfg = self._make_cfg(notify_on_success=False)
-        with patch("xsync.telegram.send_telegram_message") as mock_send:
+        with patch("xync.telegram.send_telegram_message") as mock_send:
             notify_sync_result(cfg, "ubuntu", SyncStatus.SUCCESS, 10.0)
         mock_send.assert_not_called()
 
     def test_skips_failure_when_notify_on_failure_false(self):
         cfg = self._make_cfg(notify_on_failure=False)
-        with patch("xsync.telegram.send_telegram_message") as mock_send:
+        with patch("xync.telegram.send_telegram_message") as mock_send:
             notify_sync_result(cfg, "ubuntu", SyncStatus.FAILED, 5.0, "exit code 1")
         mock_send.assert_not_called()
 
     def test_sends_success_notification(self):
         cfg = self._make_cfg()
-        with patch("xsync.telegram.send_telegram_message") as mock_send:
+        with patch("xync.telegram.send_telegram_message") as mock_send:
             notify_sync_result(cfg, "ubuntu", SyncStatus.SUCCESS, 12.5)
         mock_send.assert_called_once()
         text = mock_send.call_args[0][2]
@@ -98,7 +93,7 @@ class TestNotifySyncResult:
 
     def test_sends_failure_notification_with_error(self):
         cfg = self._make_cfg()
-        with patch("xsync.telegram.send_telegram_message") as mock_send:
+        with patch("xync.telegram.send_telegram_message") as mock_send:
             notify_sync_result(cfg, "debian", SyncStatus.FAILED, 3.0, "rsync failed")
         mock_send.assert_called_once()
         text = mock_send.call_args[0][2]
@@ -109,7 +104,7 @@ class TestNotifySyncResult:
 
     def test_sends_with_correct_credentials(self):
         cfg = self._make_cfg(bot_token="mytoken", chat_id="mychat")
-        with patch("xsync.telegram.send_telegram_message") as mock_send:
+        with patch("xync.telegram.send_telegram_message") as mock_send:
             notify_sync_result(cfg, "ubuntu", SyncStatus.SUCCESS, 5.0)
         mock_send.assert_called_once_with(
             "mytoken", "mychat", mock_send.call_args[0][2]
@@ -128,25 +123,25 @@ class TestNotifySyncStart:
 
     def test_skips_when_no_token(self):
         cfg = TelegramConfig(bot_token=None, chat_id="chat", notify_on_start=True)
-        with patch("xsync.telegram.send_telegram_message") as mock_send:
+        with patch("xync.telegram.send_telegram_message") as mock_send:
             notify_sync_start(cfg, "ubuntu")
         mock_send.assert_not_called()
 
     def test_skips_when_no_chat_id(self):
         cfg = TelegramConfig(bot_token="token", chat_id=None, notify_on_start=True)
-        with patch("xsync.telegram.send_telegram_message") as mock_send:
+        with patch("xync.telegram.send_telegram_message") as mock_send:
             notify_sync_start(cfg, "ubuntu")
         mock_send.assert_not_called()
 
     def test_skips_when_notify_on_start_false(self):
         cfg = self._make_cfg(notify_on_start=False)
-        with patch("xsync.telegram.send_telegram_message") as mock_send:
+        with patch("xync.telegram.send_telegram_message") as mock_send:
             notify_sync_start(cfg, "ubuntu")
         mock_send.assert_not_called()
 
     def test_sends_start_notification(self):
         cfg = self._make_cfg()
-        with patch("xsync.telegram.send_telegram_message") as mock_send:
+        with patch("xync.telegram.send_telegram_message") as mock_send:
             notify_sync_start(cfg, "ubuntu")
         mock_send.assert_called_once()
         text = mock_send.call_args[0][2]
@@ -167,19 +162,19 @@ class TestNotifySyncFinish:
 
     def test_skips_when_no_token(self):
         cfg = TelegramConfig(bot_token=None, chat_id="chat", notify_on_finish=True)
-        with patch("xsync.telegram.send_telegram_message") as mock_send:
+        with patch("xync.telegram.send_telegram_message") as mock_send:
             notify_sync_finish(cfg, "ubuntu", SyncStatus.SUCCESS, 5.0)
         mock_send.assert_not_called()
 
     def test_skips_when_notify_on_finish_false(self):
         cfg = self._make_cfg(notify_on_finish=False)
-        with patch("xsync.telegram.send_telegram_message") as mock_send:
+        with patch("xync.telegram.send_telegram_message") as mock_send:
             notify_sync_finish(cfg, "ubuntu", SyncStatus.SUCCESS, 5.0)
         mock_send.assert_not_called()
 
     def test_sends_finish_notification_on_success(self):
         cfg = self._make_cfg()
-        with patch("xsync.telegram.send_telegram_message") as mock_send:
+        with patch("xync.telegram.send_telegram_message") as mock_send:
             notify_sync_finish(cfg, "ubuntu", SyncStatus.SUCCESS, 12.5)
         mock_send.assert_called_once()
         text = mock_send.call_args[0][2]
@@ -191,7 +186,7 @@ class TestNotifySyncFinish:
 
     def test_sends_finish_notification_on_failure(self):
         cfg = self._make_cfg()
-        with patch("xsync.telegram.send_telegram_message") as mock_send:
+        with patch("xync.telegram.send_telegram_message") as mock_send:
             notify_sync_finish(cfg, "debian", SyncStatus.FAILED, 3.0, "rsync failed")
         mock_send.assert_called_once()
         text = mock_send.call_args[0][2]
@@ -212,19 +207,19 @@ class TestNotifySyncProgress:
 
     def test_skips_when_no_token(self):
         cfg = TelegramConfig(bot_token=None, chat_id="chat", notify_on_progress=True)
-        with patch("xsync.telegram.send_telegram_message") as mock_send:
+        with patch("xync.telegram.send_telegram_message") as mock_send:
             notify_sync_progress(cfg, "ubuntu", 50)
         mock_send.assert_not_called()
 
     def test_skips_when_notify_on_progress_false(self):
         cfg = self._make_cfg(notify_on_progress=False)
-        with patch("xsync.telegram.send_telegram_message") as mock_send:
+        with patch("xync.telegram.send_telegram_message") as mock_send:
             notify_sync_progress(cfg, "ubuntu", 50)
         mock_send.assert_not_called()
 
     def test_sends_progress_notification(self):
         cfg = self._make_cfg()
-        with patch("xsync.telegram.send_telegram_message") as mock_send:
+        with patch("xync.telegram.send_telegram_message") as mock_send:
             notify_sync_progress(cfg, "ubuntu", 50)
         mock_send.assert_called_once()
         text = mock_send.call_args[0][2]
@@ -236,7 +231,7 @@ class TestNotifySyncProgress:
 class TestDiskUsageAndTestNotification:
     def test_sends_disk_usage_warning(self):
         cfg = TelegramConfig(bot_token="tok123", chat_id="chat789")
-        with patch("xsync.telegram.send_telegram_message") as mock_send:
+        with patch("xync.telegram.send_telegram_message") as mock_send:
             notify_disk_usage_warning(cfg, "ubuntu", 91.5, 90, "/srv/mirrors")
         mock_send.assert_called_once()
         text = mock_send.call_args[0][2]
@@ -247,7 +242,7 @@ class TestDiskUsageAndTestNotification:
     def test_send_test_notification(self):
         cfg = TelegramConfig(bot_token="tok123", chat_id="chat789")
         with patch(
-            "xsync.telegram.send_telegram_message", return_value=True
+            "xync.telegram.send_telegram_message", return_value=True
         ) as mock_send:
             result = send_test_notification(cfg)
         assert result is True

@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag to build for'
+        description: "Release tag to build for"
         required: false
-        default: 'latest'
+        default: "latest"
 
 permissions:
   contents: write
@@ -25,7 +25,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
@@ -37,33 +37,33 @@ jobs:
 
       - name: Build executable
         run: |
-          uv run pyinstaller xsync.spec
-          chmod +x dist/xsync
+          uv run pyinstaller xync.spec
+          chmod +x dist/xync
 
       - name: Test executable
         run: |
-          ./dist/xsync --version
-          ./dist/xsync --help
+          ./dist/xync --version
+          ./dist/xync --help
 
       - name: Create archive
         run: |
           cd dist
-          tar -czf xsync-linux-amd64.tar.gz xsync
-          sha256sum xsync-linux-amd64.tar.gz > xsync-linux-amd64.tar.gz.sha256
+          tar -czf xync-linux-amd64.tar.gz xync
+          sha256sum xync-linux-amd64.tar.gz > xync-linux-amd64.tar.gz.sha256
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         if: github.event_name == 'release'
         with:
           files: |
-            dist/xsync-linux-amd64.tar.gz
-            dist/xsync-linux-amd64.tar.gz.sha256
+            dist/xync-linux-amd64.tar.gz
+            dist/xync-linux-amd64.tar.gz.sha256
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: xsync-linux-amd64
-          path: dist/xsync-linux-amd64.tar.gz
+          name: xync-linux-amd64
+          path: dist/xync-linux-amd64.tar.gz
 
   build-linux-arm64:
     name: Build Linux ARM64
@@ -92,19 +92,19 @@ jobs:
       - name: Create archive
         run: |
           cd dist
-          tar -czf xsync-linux-arm64.tar.gz xsync
-          sha256sum xsync-linux-arm64.tar.gz > xsync-linux-arm64.tar.gz.sha256
+          tar -czf xync-linux-arm64.tar.gz xync
+          sha256sum xync-linux-arm64.tar.gz > xync-linux-arm64.tar.gz.sha256
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         if: github.event_name == 'release'
         with:
           files: |
-            dist/xsync-linux-arm64.tar.gz
-            dist/xsync-linux-arm64.tar.gz.sha256
+            dist/xync-linux-arm64.tar.gz
+            dist/xync-linux-arm64.tar.gz.sha256
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: xsync-linux-arm64
-          path: dist/xsync-linux-arm64.tar.gz
+          name: xync-linux-arm64
+          path: dist/xync-linux-arm64.tar.gz

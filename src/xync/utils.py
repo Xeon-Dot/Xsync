@@ -1,4 +1,4 @@
-"""Shared utility functions for Xsync."""
+"""Shared utility functions for xync."""
 
 from __future__ import annotations
 
@@ -50,8 +50,8 @@ def make_progress_callback(
     Telegram / Discord progress notifications when a new 10 % milestone is
     reached.
     """
-    from xsync.discord import notify_sync_progress as _discord_progress
-    from xsync.telegram import notify_sync_progress as _telegram_progress
+    from xync.discord import notify_sync_progress as _discord_progress
+    from xync.telegram import notify_sync_progress as _telegram_progress
 
     last_milestone: int = -1
 

@@ -1,4 +1,4 @@
-"""Xsync — Linux mirror synchronization and management CLI."""
+"""xync — Linux mirror synchronization and management CLI."""
 
 from __future__ import annotations
 
@@ -15,22 +15,21 @@ import typer
 from rich import print as rprint
 from rich.console import Console
 from rich.table import Table
-
-from xsync.api import format_size
-from xsync.config import get_config_dir, get_config_path, load_config, save_config
-from xsync.discord import notify_disk_usage_warning as notify_discord_disk_warning
-from xsync.discord import notify_sync_finish as notify_discord_finish
-from xsync.discord import notify_sync_result as notify_discord
-from xsync.discord import notify_sync_start as notify_discord_start
-from xsync.discord import send_test_notification as send_discord_test
-from xsync.models import GlobalConfig, Mirror, MirrorType, SyncStatus, XsyncConfig
-from xsync.sync import SyncResult, diff_mirror, purge_old_logs, sync_mirror
-from xsync.telegram import notify_disk_usage_warning as notify_telegram_disk_warning
-from xsync.telegram import notify_sync_finish as notify_telegram_finish
-from xsync.telegram import notify_sync_result as notify_telegram
-from xsync.telegram import notify_sync_start as notify_telegram_start
-from xsync.telegram import send_test_notification as send_telegram_test
-from xsync.utils import disk_usage_for_path, make_progress_callback
+from xync.api import format_size
+from xync.config import get_config_dir, get_config_path, load_config, save_config
+from xync.discord import notify_disk_usage_warning as notify_discord_disk_warning
+from xync.discord import notify_sync_finish as notify_discord_finish
+from xync.discord import notify_sync_result as notify_discord
+from xync.discord import notify_sync_start as notify_discord_start
+from xync.discord import send_test_notification as send_discord_test
+from xync.models import GlobalConfig, Mirror, MirrorType, SyncStatus, xyncConfig
+from xync.sync import SyncResult, diff_mirror, purge_old_logs, sync_mirror
+from xync.telegram import notify_disk_usage_warning as notify_telegram_disk_warning
+from xync.telegram import notify_sync_finish as notify_telegram_finish
+from xync.telegram import notify_sync_result as notify_telegram
+from xync.telegram import notify_sync_start as notify_telegram_start
+from xync.telegram import send_test_notification as send_telegram_test
+from xync.utils import disk_usage_for_path, make_progress_callback
 
 # ---------------------------------------------------------------------------
 # Logging setup
@@ -38,7 +37,7 @@ from xsync.utils import disk_usage_for_path, make_progress_callback
 
 
 def _setup_logging() -> None:
-    """Configure basic logging for the Xsync package.
+    """Configure basic logging for the xync package.
 
     Sends WARNING and above to stderr with a minimal format.  When the
     daemon runs, stderr is redirected to the daemon log file.
@@ -46,22 +45,20 @@ def _setup_logging() -> None:
     handler = logging.StreamHandler()
     handler.setLevel(logging.WARNING)
     handler.setFormatter(logging.Formatter("%(levelname)s [%(name)s] %(message)s"))
-    logging.getLogger("xsync").addHandler(handler)
-    logging.getLogger("xsync").setLevel(logging.WARNING)
+    logging.getLogger("xync").addHandler(handler)
+    logging.getLogger("xync").setLevel(logging.WARNING)
 
 
 _setup_logging()
 
 app = typer.Typer(
-    name="xsync",
+    name="xync",
     help="Linux mirror synchronization and management CLI.",
     add_completion=True,
     no_args_is_help=True,
 )
 mirror_app = typer.Typer(help="Manage mirror configurations.", no_args_is_help=True)
-config_app = typer.Typer(
-    help="Manage global Xsync configuration.", no_args_is_help=True
-)
+config_app = typer.Typer(help="Manage global xync configuration.", no_args_is_help=True)
 daemon_app = typer.Typer(
     help="Manage the background sync daemon.", no_args_is_help=True
 )
@@ -85,8 +82,8 @@ ConfigDirOption = Annotated[
     typer.Option(
         "--config-dir",
         "-C",
-        help="Path to Xsync configuration directory.",
-        envvar="XSYNC_CONFIG_DIR",
+        help="Path to xync configuration directory.",
+        envvar="xync_CONFIG_DIR",
         show_default=False,
     ),
 ]
@@ -123,7 +120,7 @@ _CONFIG_FALSE_VALUES = {"false", "0", "no"}
 
 
 # ---------------------------------------------------------------------------
-# xsync init
+# xync init
 # ---------------------------------------------------------------------------
 
 
@@ -131,7 +128,7 @@ _CONFIG_FALSE_VALUES = {"false", "0", "no"}
 def init(
     config_dir: ConfigDirOption = None,
 ) -> None:
-    """Initialise the Xsync configuration directory."""
+    """Initialise the xync configuration directory."""
     cfg_dir = get_config_dir(config_dir)
     cfg_path = get_config_path(config_dir)
 
@@ -139,13 +136,13 @@ def init(
         rprint(f"[yellow]Configuration already exists at[/yellow] {cfg_path}")
         return
 
-    cfg = XsyncConfig()
+    cfg = xyncConfig()
     save_config(cfg, config_dir)
-    rprint(f"[green]✓ Initialised Xsync configuration at[/green] {cfg_dir}")
+    rprint(f"[green]✓ Initialised xync configuration at[/green] {cfg_dir}")
 
 
 # ---------------------------------------------------------------------------
-# xsync mirror add
+# xync mirror add
 # ---------------------------------------------------------------------------
 
 
@@ -207,7 +204,7 @@ def mirror_add(
 
 
 # ---------------------------------------------------------------------------
-# xsync mirror remove
+# xync mirror remove
 # ---------------------------------------------------------------------------
 
 
@@ -235,7 +232,7 @@ def mirror_remove(
 
 
 # ---------------------------------------------------------------------------
-# xsync mirror list
+# xync mirror list
 # ---------------------------------------------------------------------------
 
 
@@ -248,7 +245,7 @@ def mirror_list(
 
     if not cfg.mirrors:
         rprint(
-            "[yellow]No mirrors configured.[/yellow]  Run [bold]xsync mirror add[/bold] to add one."  # noqa: E501
+            "[yellow]No mirrors configured.[/yellow]  Run [bold]xync mirror add[/bold] to add one."  # noqa: E501
         )
         return
 
@@ -279,7 +276,7 @@ def mirror_list(
 
 
 # ---------------------------------------------------------------------------
-# xsync mirror show
+# xync mirror show
 # ---------------------------------------------------------------------------
 
 
@@ -316,7 +313,7 @@ def mirror_show(
 
 
 # ---------------------------------------------------------------------------
-# xsync mirror enable / disable
+# xync mirror enable / disable
 # ---------------------------------------------------------------------------
 
 
@@ -349,7 +346,7 @@ def _set_mirror_enabled(name: str, enabled: bool, config_dir: Optional[Path]) ->
 
 
 # ---------------------------------------------------------------------------
-# xsync mirror diff
+# xync mirror diff
 # ---------------------------------------------------------------------------
 
 
@@ -375,7 +372,7 @@ def mirror_diff(
 
 
 # ---------------------------------------------------------------------------
-# xsync sync
+# xync sync
 # ---------------------------------------------------------------------------
 
 
@@ -419,7 +416,7 @@ def sync(
             rprint(
                 f"\n[bold cyan]Syncing[/bold cyan] [bold]{mirror.name}[/bold]  ({mirror.url})"  # noqa: E501
             )
-            from xsync.sync import _build_command
+            from xync.sync import _build_command
 
             try:
                 cmd = _build_command(mirror, check_tools=False)
@@ -528,7 +525,7 @@ def sync(
 
 
 # ---------------------------------------------------------------------------
-# xsync status
+# xync status
 # ---------------------------------------------------------------------------
 
 
@@ -584,7 +581,7 @@ def status(
 
 
 # ---------------------------------------------------------------------------
-# xsync log
+# xync log
 # ---------------------------------------------------------------------------
 
 
@@ -625,7 +622,7 @@ def log(
 
 
 # ---------------------------------------------------------------------------
-# xsync health
+# xync health
 # ---------------------------------------------------------------------------
 
 
@@ -637,12 +634,12 @@ def health(
     ] = None,
     config_dir: ConfigDirOption = None,
 ) -> None:
-    """Check local Xsync configuration, tools, paths, and disk usage."""
+    """Check local xync configuration, tools, paths, and disk usage."""
     cfg = load_config(config_dir)
     cfg_path = get_config_path(config_dir)
     cfg_dir = get_config_dir(config_dir)
 
-    table = Table(title="Xsync Health", show_lines=True)
+    table = Table(title="xync Health", show_lines=True)
     table.add_column("Check", style="bold cyan")
     table.add_column("Target")
     table.add_column("Status")
@@ -731,7 +728,7 @@ def health(
 
 
 # ---------------------------------------------------------------------------
-# xsync config show
+# xync config show
 # ---------------------------------------------------------------------------
 
 
@@ -792,7 +789,7 @@ def config_show(
 
 
 # ---------------------------------------------------------------------------
-# xsync config set
+# xync config set
 # ---------------------------------------------------------------------------
 
 
@@ -885,7 +882,7 @@ def _valid_config_keys() -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# xsync config validate
+# xync config validate
 # ---------------------------------------------------------------------------
 
 
@@ -947,7 +944,7 @@ def config_validate(
 
 
 # ---------------------------------------------------------------------------
-# xsync daemon start / stop / status
+# xync daemon start / stop / status
 # ---------------------------------------------------------------------------
 
 
@@ -991,7 +988,7 @@ def daemon_start(
     terminal is closed or the user logs out.  Sync results are written to
     the daemon log file inside the config directory.
     """
-    from xsync.daemon import (  # noqa: PLC0415
+    from xync.daemon import (  # noqa: PLC0415
         daemonize,
         get_daemon_log_file,
         get_pid_file,
@@ -1019,13 +1016,13 @@ def daemon_start(
 
     if enable_api:
         rprint(
-            f"[green]Starting Xsync daemon[/green] "
+            f"[green]Starting xync daemon[/green] "
             f"(interval={sync_interval}s, log={log_file}, "
             f"api=enabled, port={final_api_port})"
         )
     else:
         rprint(
-            f"[green]Starting Xsync daemon[/green] "
+            f"[green]Starting xync daemon[/green] "
             f"(interval={sync_interval}s, log={log_file})"
         )
 
@@ -1043,7 +1040,7 @@ def daemon_stop(
     ),
 ) -> None:
     """Stop the running background sync daemon."""
-    from xsync.daemon import (
+    from xync.daemon import (
         get_pid_file,
         is_running,
         read_pid,
@@ -1071,7 +1068,7 @@ def daemon_status(
     config_dir: ConfigDirOption = None,
 ) -> None:
     """Show whether the background sync daemon is running."""
-    from xsync.daemon import (
+    from xync.daemon import (
         get_daemon_log_file,
         get_pid_file,
         is_running,
@@ -1128,7 +1125,7 @@ def daemon_restart(
     ),
 ) -> None:
     """Restart the background sync daemon."""
-    from xsync.daemon import (
+    from xync.daemon import (
         get_pid_file,
         is_running,
         read_pid,
@@ -1158,7 +1155,7 @@ def daemon_restart(
 
 
 # ---------------------------------------------------------------------------
-# xsync notify test
+# xync notify test
 # ---------------------------------------------------------------------------
 
 
@@ -1203,7 +1200,7 @@ def notify_test(
 # ---------------------------------------------------------------------------
 
 
-def _get_mirror(cfg: XsyncConfig, name: str) -> Mirror:
+def _get_mirror(cfg: xyncConfig, name: str) -> Mirror:
     if name not in cfg.mirrors:
         rprint(f"[red]Error:[/red] Mirror [bold]{name}[/bold] not found.")
         raise typer.Exit(1)
@@ -1211,7 +1208,7 @@ def _get_mirror(cfg: XsyncConfig, name: str) -> Mirror:
 
 
 def _resolve_sync_targets(
-    cfg: XsyncConfig,
+    cfg: xyncConfig,
     names: Optional[list[str]],
     skip_disabled: bool = True,
 ) -> list[Mirror]:
@@ -1228,7 +1225,7 @@ def _resolve_sync_targets(
     return mirrors
 
 
-def _required_tools(cfg: XsyncConfig) -> set[str]:
+def _required_tools(cfg: xyncConfig) -> set[str]:
     tools: set[str] = set()
     for mirror in cfg.mirrors.values():
         if mirror.mirror_type == MirrorType.RSYNC:
@@ -1250,7 +1247,7 @@ def _expected_scheme_status(mirror: Mirror) -> Optional[str]:
     return None
 
 
-def _notify_disk_warning_if_needed(cfg: XsyncConfig, mirror: Mirror) -> None:
+def _notify_disk_warning_if_needed(cfg: xyncConfig, mirror: Mirror) -> None:
     usage = disk_usage_for_path(mirror.local_path)
     if usage is None:
         return
@@ -1285,7 +1282,7 @@ def _status_style(status: SyncStatus) -> str:
 
 
 # ---------------------------------------------------------------------------
-# xsync api start / stop / status
+# xync api start / stop / status
 # ---------------------------------------------------------------------------
 
 
@@ -1298,7 +1295,7 @@ def api_start(
     config_dir: ConfigDirOption = None,
 ) -> None:
     """Start the API server."""
-    from xsync.api import (
+    from xync.api import (
         get_api_pid_file,
         init_api_state,
         is_api_running,
@@ -1313,7 +1310,7 @@ def api_start(
         raise typer.Exit(1)
 
     init_api_state(config_dir)
-    rprint(f"[green]Starting Xsync API server[/green] on port {port}")
+    rprint(f"[green]Starting xync API server[/green] on port {port}")
     rprint(f"[dim]Config directory: {cfg_dir}[/dim]")
     rprint(f"[dim]API endpoint: http://0.0.0.0:{port}/api/status[/dim]")
     try:
@@ -1330,7 +1327,7 @@ def api_stop(
     ),
 ) -> None:
     """Stop a running API server process."""
-    from xsync.api import (
+    from xync.api import (
         get_api_pid_file,
         is_api_running,
         read_api_pid,
@@ -1358,7 +1355,7 @@ def api_status(
     config_dir: ConfigDirOption = None,
 ) -> None:
     """Show whether the API server is running."""
-    from xsync.api import (
+    from xync.api import (
         get_api_pid_file,
         is_api_running,
         read_api_pid,

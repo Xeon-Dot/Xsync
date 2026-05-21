@@ -1,4 +1,4 @@
-"""Telegram notification support for Xsync."""
+"""Telegram notification support for xync."""
 
 from __future__ import annotations
 
@@ -6,8 +6,7 @@ import logging
 from typing import Optional
 
 import httpx
-
-from xsync.models import SyncStatus, TelegramConfig
+from xync.models import SyncStatus, TelegramConfig
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +42,7 @@ def notify_sync_start(
     if not telegram_cfg.notify_on_start:
         return
 
-    text = f"🔄 Xsync: [{mirror_name}] SYNC STARTED"
+    text = f"🔄 xync: [{mirror_name}] SYNC STARTED"
     send_telegram_message(telegram_cfg.bot_token, telegram_cfg.chat_id, text)
 
 
@@ -66,7 +65,7 @@ def notify_sync_finish(
 
     status_emoji = "✅" if status == SyncStatus.SUCCESS else "❌"
     text = (
-        f"{status_emoji} Xsync: [{mirror_name}] SYNC FINISHED ({status.value.upper()})\n"  # noqa: E501
+        f"{status_emoji} xync: [{mirror_name}] SYNC FINISHED ({status.value.upper()})\n"  # noqa: E501
         f"Duration: {duration_seconds:.1f}s"
     )
     if error:
@@ -90,7 +89,7 @@ def notify_sync_progress(
     if not telegram_cfg.notify_on_progress:
         return
 
-    text = f"📊 Xsync: [{mirror_name}] progress {progress_pct}%"
+    text = f"📊 xync: [{mirror_name}] progress {progress_pct}%"
     send_telegram_message(telegram_cfg.bot_token, telegram_cfg.chat_id, text)
 
 
@@ -108,7 +107,7 @@ def notify_disk_usage_warning(
         return
 
     text = (
-        f"⚠️ Xsync: [{mirror_name}] disk usage warning\n"
+        f"⚠️ xync: [{mirror_name}] disk usage warning\n"
         f"Usage: {usage_percent:.1f}% "
         f"(threshold: {threshold_percent}%)\n"
         f"Path: {path}"
@@ -123,7 +122,7 @@ def send_test_notification(telegram_cfg: TelegramConfig) -> bool:
     return send_telegram_message(
         telegram_cfg.bot_token,
         telegram_cfg.chat_id,
-        "✅ Xsync test notification",
+        "✅ xync test notification",
     )
 
 
@@ -149,7 +148,7 @@ def notify_sync_result(
 
     status_emoji = "✅" if status == SyncStatus.SUCCESS else "❌"
     text = (
-        f"{status_emoji} Xsync: [{mirror_name}] {status.value.upper()}\n"
+        f"{status_emoji} xync: [{mirror_name}] {status.value.upper()}\n"
         f"Duration: {duration_seconds:.1f}s"
     )
     if error:

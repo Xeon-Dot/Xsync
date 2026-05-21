@@ -1,4 +1,4 @@
-"""Discord webhook notification support for Xsync."""
+"""Discord webhook notification support for xync."""
 
 from __future__ import annotations
 
@@ -6,8 +6,7 @@ import logging
 from typing import Optional
 
 import httpx
-
-from xsync.models import DiscordConfig, SyncStatus
+from xync.models import DiscordConfig, SyncStatus
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +39,7 @@ def notify_sync_start(
     if not discord_cfg.notify_on_start:
         return
 
-    content = f"🔄 Xsync: [{mirror_name}] SYNC STARTED"
+    content = f"🔄 xync: [{mirror_name}] SYNC STARTED"
     send_discord_message(discord_cfg.webhook_url, content)
 
 
@@ -63,7 +62,7 @@ def notify_sync_finish(
 
     status_emoji = "✅" if status == SyncStatus.SUCCESS else "❌"
     content = (
-        f"{status_emoji} Xsync: [{mirror_name}] SYNC FINISHED ({status.value.upper()})\n"  # noqa: E501
+        f"{status_emoji} xync: [{mirror_name}] SYNC FINISHED ({status.value.upper()})\n"  # noqa: E501
         f"Duration: {duration_seconds:.1f}s"
     )
     if error:
@@ -87,7 +86,7 @@ def notify_sync_progress(
     if not discord_cfg.notify_on_progress:
         return
 
-    content = f"📊 Xsync: [{mirror_name}] progress {progress_pct}%"
+    content = f"📊 xync: [{mirror_name}] progress {progress_pct}%"
     send_discord_message(discord_cfg.webhook_url, content)
 
 
@@ -105,7 +104,7 @@ def notify_disk_usage_warning(
         return
 
     content = (
-        f"⚠️ Xsync: [{mirror_name}] disk usage warning\n"
+        f"⚠️ xync: [{mirror_name}] disk usage warning\n"
         f"Usage: {usage_percent:.1f}% "
         f"(threshold: {threshold_percent}%)\n"
         f"Path: {path}"
@@ -117,7 +116,7 @@ def send_test_notification(discord_cfg: DiscordConfig) -> bool:
     """Send a test Discord notification and return whether it was delivered."""
     if not discord_cfg.webhook_url:
         return False
-    return send_discord_message(discord_cfg.webhook_url, "✅ Xsync test notification")
+    return send_discord_message(discord_cfg.webhook_url, "✅ xync test notification")
 
 
 def notify_sync_result(
@@ -142,7 +141,7 @@ def notify_sync_result(
 
     status_emoji = "✅" if status == SyncStatus.SUCCESS else "❌"
     content = (
-        f"{status_emoji} Xsync: [{mirror_name}] {status.value.upper()}\n"
+        f"{status_emoji} xync: [{mirror_name}] {status.value.upper()}\n"
         f"Duration: {duration_seconds:.1f}s"
     )
     if error:

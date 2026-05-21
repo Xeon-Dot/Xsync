@@ -1,4 +1,4 @@
-"""Configuration file management for Xsync."""
+"""Configuration file management for xync."""
 
 from __future__ import annotations
 
@@ -8,17 +8,16 @@ from pathlib import Path
 from typing import Optional
 
 import tomli_w
-
-from xsync.models import (
+from xync.models import (
     DiscordConfig,
     GlobalConfig,
     Mirror,
     MirrorType,
     TelegramConfig,
-    XsyncConfig,
+    xyncConfig,
 )
 
-_DEFAULT_CONFIG_DIR = Path.home() / ".config" / "xsync"
+_DEFAULT_CONFIG_DIR = Path.home() / ".config" / "xync"
 _CONFIG_FILE = "config.toml"
 _NOTIFICATION_FLAG_DEFAULTS = {
     "notify_on_success": True,
@@ -41,21 +40,21 @@ def get_config_path(config_dir: Optional[Path] = None) -> Path:
     return get_config_dir(config_dir) / _CONFIG_FILE
 
 
-def load_config(config_dir: Optional[Path] = None) -> XsyncConfig:
-    """Load and return the Xsync configuration from disk.
+def load_config(config_dir: Optional[Path] = None) -> xyncConfig:
+    """Load and return the xync configuration from disk.
 
-    If the config file does not exist, returns a default :class:`XsyncConfig`.
+    If the config file does not exist, returns a default :class:`xyncConfig`.
     """
     path = get_config_path(config_dir)
     if not path.exists():
-        return XsyncConfig()  # pyright: ignore[reportCallIssue]
+        return xyncConfig()  # pyright: ignore[reportCallIssue]
     with path.open("rb") as fh:
         raw = tomllib.load(fh)
     return _parse_raw(raw)
 
 
-def save_config(cfg: XsyncConfig, config_dir: Optional[Path] = None) -> None:
-    """Persist the Xsync configuration to disk."""
+def save_config(cfg: xyncConfig, config_dir: Optional[Path] = None) -> None:
+    """Persist the xync configuration to disk."""
     path = get_config_path(config_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     raw = _serialise(cfg)
@@ -68,8 +67,8 @@ def save_config(cfg: XsyncConfig, config_dir: Optional[Path] = None) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _serialise(cfg: XsyncConfig) -> dict:
-    """Convert an :class:`XsyncConfig` to a plain dict suitable for TOML."""
+def _serialise(cfg: xyncConfig) -> dict:
+    """Convert an :class:`xyncConfig` to a plain dict suitable for TOML."""
     data: dict = {
         "version": cfg.version,
         "global": {
@@ -118,8 +117,8 @@ def _serialise(cfg: XsyncConfig) -> dict:
     return data
 
 
-def _parse_raw(raw: dict) -> XsyncConfig:
-    """Parse a raw TOML dict into an :class:`XsyncConfig`."""
+def _parse_raw(raw: dict) -> xyncConfig:
+    """Parse a raw TOML dict into an :class:`xyncConfig`."""
     global_raw = raw.get("global", {})
     telegram_raw = global_raw.get("telegram", {})
     telegram = TelegramConfig(
@@ -168,7 +167,7 @@ def _parse_raw(raw: dict) -> XsyncConfig:
             previous_size=mraw.get("previous_size"),
         )
 
-    return XsyncConfig(
+    return xyncConfig(
         version=raw.get("version", 1),
         global_config=global_config,
         mirrors=mirrors,

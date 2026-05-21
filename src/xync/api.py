@@ -1,4 +1,4 @@
-"""FastAPI server for Xsync."""
+"""FastAPI server for xync."""
 
 from __future__ import annotations
 
@@ -11,9 +11,8 @@ from typing import Optional
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-
-from xsync.config import get_config_dir, load_config
-from xsync.models import SyncStatus
+from xync.config import get_config_dir, load_config
+from xync.models import SyncStatus
 
 _api_state: dict = {
     "config_dir": None,
@@ -50,8 +49,8 @@ class StatusResponse(BaseModel):
 
 
 app = FastAPI(
-    title="Xsync API",
-    description="API for monitoring Xsync mirror synchronization",
+    title="xync API",
+    description="API for monitoring xync mirror synchronization",
     version="0.1.0",
 )
 
@@ -79,7 +78,7 @@ async def get_status() -> StatusResponse:
             )
         )
 
-    from xsync.daemon import get_pid_file, is_running
+    from xync.daemon import get_pid_file, is_running
 
     pid_file = get_pid_file(cfg_dir)
     daemon_running = is_running(pid_file)
@@ -210,7 +209,7 @@ def start_api_server_thread(
 # API PID file helpers
 # ---------------------------------------------------------------------------
 
-_API_PID_FILENAME = "xsync-api.pid"
+_API_PID_FILENAME = "xync-api.pid"
 
 
 def get_api_pid_file(config_dir: Path) -> Path:

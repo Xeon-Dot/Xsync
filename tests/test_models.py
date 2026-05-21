@@ -1,9 +1,8 @@
-"""Tests for xsync.models."""
+"""Tests for xync.models."""
 
 import pytest
 from pydantic import ValidationError
-
-from xsync.models import GlobalConfig, Mirror, MirrorType, SyncStatus, XsyncConfig
+from xync.models import GlobalConfig, Mirror, MirrorType, SyncStatus, xyncConfig
 
 
 class TestMirror:
@@ -70,15 +69,15 @@ class TestMirror:
         assert m.last_size is None
 
 
-class TestXsyncConfig:
+class TestxyncConfig:
     def test_default_config(self):
-        cfg = XsyncConfig()
+        cfg = xyncConfig()
         assert cfg.version == 1
         assert isinstance(cfg.global_config, GlobalConfig)
         assert cfg.mirrors == {}
 
     def test_add_mirror(self):
-        cfg = XsyncConfig()
+        cfg = xyncConfig()
         cfg.mirrors["ubuntu"] = Mirror(
             name="ubuntu",
             url="rsync://mirror.example.com/ubuntu",

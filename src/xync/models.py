@@ -1,4 +1,4 @@
-"""Data models for Xsync."""
+"""Data models for xync."""
 
 from __future__ import annotations
 
@@ -124,7 +124,7 @@ class DiscordConfig(BaseModel):
 
 
 class GlobalConfig(BaseModel):
-    """Global Xsync configuration."""
+    """Global xync configuration."""
 
     default_rsync_options: list[str] = Field(
         default_factory=lambda: ["-avz", "--delete"],
@@ -183,7 +183,7 @@ class GlobalConfig(BaseModel):
         return v
 
 
-class XsyncConfig(BaseModel):
+class xyncConfig(BaseModel):
     """Top-level configuration container."""
 
     version: int = Field(1, description="Config schema version")

@@ -1,4 +1,4 @@
-"""Background daemon support for Xsync."""
+"""Background daemon support for xync."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-_PID_FILENAME = "xsync-daemon.pid"
+_PID_FILENAME = "xync-daemon.pid"
 _DAEMON_LOG_FILENAME = "daemon.log"
 
 
@@ -91,7 +91,7 @@ def daemonize(log_file: Path) -> None:
     * ``stdout`` / ``stderr`` redirected to *log_file* (append mode).
 
     The two intermediate parent processes exit with ``sys.exit(0)`` so the
-    shell that invoked *xsync* regains control immediately.
+    shell that invoked *xync* regains control immediately.
 
     Raises:
         RuntimeError: if either ``os.fork`` call fails.
@@ -158,35 +158,35 @@ def run_daemon_loop(
     """Write the PID file then run the sync loop until SIGTERM is received.
 
     Args:
-        config_dir: Xsync configuration directory (resolved absolute path).
+        config_dir: xync configuration directory (resolved absolute path).
         names: Mirror names to sync.  ``None`` means *all enabled* mirrors.
         interval: Seconds to wait between sync cycles (fallback when no cron).
         api_enabled: If True, start the API server in a background thread.
         api_port: Port for the API server.
     """
     # Late imports to avoid circular dependencies at module load time.
-    from xsync.config import get_config_dir, load_config, save_config  # noqa: PLC0415
-    from xsync.discord import (
+    from xync.config import get_config_dir, load_config, save_config  # noqa: PLC0415
+    from xync.discord import (
         notify_disk_usage_warning as notify_discord_disk_warning,  # noqa: PLC0415
     )
-    from xsync.discord import (
+    from xync.discord import (
         notify_sync_finish as notify_discord_finish,  # noqa: PLC0415
     )
-    from xsync.discord import notify_sync_result as notify_discord  # noqa: PLC0415
-    from xsync.discord import notify_sync_start as notify_discord_start  # noqa: PLC0415
-    from xsync.models import SyncStatus  # noqa: PLC0415
-    from xsync.sync import purge_old_logs, sync_mirror  # noqa: PLC0415
-    from xsync.telegram import (
+    from xync.discord import notify_sync_result as notify_discord  # noqa: PLC0415
+    from xync.discord import notify_sync_start as notify_discord_start  # noqa: PLC0415
+    from xync.models import SyncStatus  # noqa: PLC0415
+    from xync.sync import purge_old_logs, sync_mirror  # noqa: PLC0415
+    from xync.telegram import (
         notify_disk_usage_warning as notify_telegram_disk_warning,  # noqa: PLC0415
     )
-    from xsync.telegram import (
+    from xync.telegram import (
         notify_sync_finish as notify_telegram_finish,  # noqa: PLC0415
     )
-    from xsync.telegram import notify_sync_result as notify_telegram  # noqa: PLC0415
-    from xsync.telegram import (
+    from xync.telegram import notify_sync_result as notify_telegram  # noqa: PLC0415
+    from xync.telegram import (
         notify_sync_start as notify_telegram_start,  # noqa: PLC0415
     )
-    from xsync.utils import disk_usage_for_path, make_progress_callback  # noqa: PLC0415
+    from xync.utils import disk_usage_for_path, make_progress_callback  # noqa: PLC0415
 
     pid_file = get_pid_file(config_dir)
     pid_file.write_text(str(os.getpid()))
@@ -202,13 +202,13 @@ def run_daemon_loop(
 
     cfg = load_config(config_dir)
     if api_enabled:
-        from xsync.api import init_api_state, start_api_server_thread  # noqa: PLC0415
+        from xync.api import init_api_state, start_api_server_thread  # noqa: PLC0415
 
         init_api_state(config_dir)
         start_api_server_thread(port=api_port)
         _log(f"API server started on port {api_port}")
 
-    _log(f"Xsync daemon started (PID {os.getpid()}, interval={interval}s)")
+    _log(f"xync daemon started (PID {os.getpid()}, interval={interval}s)")
 
     try:
         while running[0]:
@@ -373,4 +373,4 @@ def run_daemon_loop(
 
     finally:
         pid_file.unlink(missing_ok=True)
-        _log("Xsync daemon stopped.")
+        _log("xync daemon stopped.")

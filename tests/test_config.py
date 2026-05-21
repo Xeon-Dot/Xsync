@@ -1,14 +1,13 @@
-"""Tests for xsync.config."""
+"""Tests for xync.config."""
 
 import pytest
-
-from xsync.config import get_config_path, load_config, save_config
-from xsync.models import Mirror, MirrorType, XsyncConfig
+from xync.config import get_config_path, load_config, save_config
+from xync.models import Mirror, MirrorType, xyncConfig
 
 
 @pytest.fixture
 def tmp_config_dir(tmp_path):
-    return tmp_path / "xsync"
+    return tmp_path / "xync"
 
 
 class TestLoadSaveConfig:
@@ -18,7 +17,7 @@ class TestLoadSaveConfig:
         assert cfg.mirrors == {}
 
     def test_save_and_reload_empty(self, tmp_config_dir):
-        cfg = XsyncConfig()
+        cfg = xyncConfig()
         save_config(cfg, tmp_config_dir)
         assert get_config_path(tmp_config_dir).exists()
         loaded = load_config(tmp_config_dir)
@@ -26,7 +25,7 @@ class TestLoadSaveConfig:
         assert loaded.mirrors == {}
 
     def test_save_and_reload_with_mirror(self, tmp_config_dir):
-        cfg = XsyncConfig()
+        cfg = xyncConfig()
         cfg.mirrors["ubuntu"] = Mirror(
             name="ubuntu",
             url="rsync://mirror.example.com/ubuntu",
@@ -44,7 +43,7 @@ class TestLoadSaveConfig:
         assert m.mirror_type == MirrorType.RSYNC
 
     def test_save_and_reload_http_mirror(self, tmp_config_dir):
-        cfg = XsyncConfig()
+        cfg = xyncConfig()
         cfg.mirrors["debian"] = Mirror(
             name="debian",
             url="http://ftp.debian.org/debian",
@@ -56,19 +55,19 @@ class TestLoadSaveConfig:
         assert loaded.mirrors["debian"].mirror_type == MirrorType.HTTP
 
     def test_global_config_roundtrip(self, tmp_config_dir):
-        cfg = XsyncConfig()
+        cfg = xyncConfig()
         cfg.global_config.max_log_files = 10
         cfg.global_config.parallel_jobs = 4
-        cfg.global_config.log_dir = "/var/log/xsync"
+        cfg.global_config.log_dir = "/var/log/xync"
         save_config(cfg, tmp_config_dir)
 
         loaded = load_config(tmp_config_dir)
         assert loaded.global_config.max_log_files == 10
         assert loaded.global_config.parallel_jobs == 4
-        assert loaded.global_config.log_dir == "/var/log/xsync"
+        assert loaded.global_config.log_dir == "/var/log/xync"
 
     def test_bandwidth_limit_roundtrip(self, tmp_config_dir):
-        cfg = XsyncConfig()
+        cfg = xyncConfig()
         cfg.mirrors["centos"] = Mirror(
             name="centos",
             url="rsync://mirror.example.com/centos",
@@ -80,7 +79,7 @@ class TestLoadSaveConfig:
         assert loaded.mirrors["centos"].bandwidth_limit == "5m"
 
     def test_telegram_config_roundtrip(self, tmp_config_dir):
-        cfg = XsyncConfig()
+        cfg = xyncConfig()
         cfg.global_config.telegram.bot_token = "123456:ABC"
         cfg.global_config.telegram.chat_id = "-100987"
         cfg.global_config.telegram.notify_on_success = False
@@ -94,7 +93,7 @@ class TestLoadSaveConfig:
         assert tg.notify_on_failure is True
 
     def test_telegram_config_defaults(self, tmp_config_dir):
-        cfg = XsyncConfig()
+        cfg = xyncConfig()
         save_config(cfg, tmp_config_dir)
         loaded = load_config(tmp_config_dir)
         tg = loaded.global_config.telegram
@@ -104,7 +103,7 @@ class TestLoadSaveConfig:
         assert tg.notify_on_failure is True
 
     def test_discord_config_roundtrip(self, tmp_config_dir):
-        cfg = XsyncConfig()
+        cfg = xyncConfig()
         cfg.global_config.discord.webhook_url = (
             "https://discord.com/api/webhooks/123/token"
         )
@@ -118,7 +117,7 @@ class TestLoadSaveConfig:
         assert dc.notify_on_failure is True
 
     def test_discord_config_defaults(self, tmp_config_dir):
-        cfg = XsyncConfig()
+        cfg = xyncConfig()
         save_config(cfg, tmp_config_dir)
         loaded = load_config(tmp_config_dir)
         dc = loaded.global_config.discord
@@ -127,7 +126,7 @@ class TestLoadSaveConfig:
         assert dc.notify_on_failure is True
 
     def test_last_size_roundtrip(self, tmp_config_dir):
-        cfg = XsyncConfig()
+        cfg = xyncConfig()
         cfg.mirrors["ubuntu"] = Mirror(
             name="ubuntu",
             url="rsync://mirror.example.com/ubuntu",

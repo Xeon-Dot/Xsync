@@ -1,4 +1,4 @@
-# Xsync
+# xync
 
 > **Linux mirror synchronization and management CLI tool**
 > Built with Python · [uv](https://docs.astral.sh/uv/) · [Typer](https://typer.tiangolo.com/) · [Rich](https://rich.readthedocs.io/) · [FastAPI](https://fastapi.tiangolo.com/)
@@ -13,7 +13,7 @@
 | --- | --- |
 | **rsync mirrors** | Full rsync support with per-mirror options, bandwidth limiting, and progress tracking |
 | **HTTP / FTP mirrors** | wget-based mirroring for HTTP, HTTPS, and FTP sources |
-| **Mirror diff** | `xsync mirror diff` — preview changes before syncing via `rsync --dry-run --itemize-changes` |
+| **Mirror diff** | `xync mirror diff` — preview changes before syncing via `rsync --dry-run --itemize-changes` |
 | **Parallel sync** | Concurrent mirror syncing via `ThreadPoolExecutor` (configurable `parallel_jobs`) |
 | **Dry-run & verbose** | `--dry-run` prints commands without executing; `--verbose` streams live subprocess output |
 | **Per-mirror locking** | Atomic lock files prevent overlapping sync runs of the same mirror |
@@ -41,17 +41,17 @@
 | **Telegram & Discord** | Alerts via Telegram Bot API and Discord Webhooks with per-channel notification toggles |
 | **Trigger events** | Configurable alerts for start, success, failure, finish, and progress milestones (every 10%) |
 | **Disk warnings** | Automatic alert when mirror filesystem exceeds configurable threshold |
-| **Test command** | `xsync notify test` to verify notification channel configuration before relying on them |
+| **Test command** | `xync notify test` to verify notification channel configuration before relying on them |
 
 ### Management
 
 | Feature | Details |
 | --- | --- |
-| **TOML config** | Human-readable `~/.config/xsync/config.toml` with schema versioning for future migrations |
-| **CLI config editor** | `xsync config set` and `xsync config validate` — no need to edit TOML by hand |
+| **TOML config** | Human-readable `~/.config/xync/config.toml` with schema versioning for future migrations |
+| **CLI config editor** | `xync config set` and `xync config validate` — no need to edit TOML by hand |
 | **Health checks** | Validate tools on PATH, URL schemes, directory permissions, and disk usage |
-| **Sync logs** | Per-run timestamped log files with automatic rotation and in-CLI viewing (`xsync log`) |
-| **Size trends** | Track previous vs current mirror size delta in `xsync status` |
+| **Sync logs** | Per-run timestamped log files with automatic rotation and in-CLI viewing (`xync log`) |
+| **Size trends** | Track previous vs current mirror size delta in `xync status` |
 | **Rich output** | Colour-coded tables, status indicators, and progress bars |
 | **Shell completion** | bash / zsh / fish via Typer |
 | **Standalone binary** | Single-file executable built with PyInstaller — no Python required at runtime |
@@ -77,24 +77,24 @@ Download the latest release for your platform:
 
 **Linux AMD64 (x86_64):**
 ```bash
-wget https://github.com/xeon-dot/Xsync/releases/latest/download/xsync-linux-amd64.tar.gz
-tar -xzf xsync-linux-amd64.tar.gz
-sudo mv xsync /usr/local/bin/
-xsync --version
+wget https://github.com/xeon-dot/xync/releases/latest/download/xync-linux-amd64.tar.gz
+tar -xzf xync-linux-amd64.tar.gz
+sudo mv xync /usr/local/bin/
+xync --version
 ```
 
 **Linux ARM64 (aarch64):**
 ```bash
-wget https://github.com/xeon-dot/Xsync/releases/latest/download/xsync-linux-arm64.tar.gz
-tar -xzf xsync-linux-arm64.tar.gz
-sudo mv xsync /usr/local/bin/
-xsync --version
+wget https://github.com/xeon-dot/xync/releases/latest/download/xync-linux-arm64.tar.gz
+tar -xzf xync-linux-arm64.tar.gz
+sudo mv xync /usr/local/bin/
+xync --version
 ```
 
 **Verify checksum (optional):**
 ```bash
-wget https://github.com/xeon-dot/Xsync/releases/latest/download/xsync-linux-amd64.tar.gz.sha256
-sha256sum -c xsync-linux-amd64.tar.gz.sha256
+wget https://github.com/xeon-dot/xync/releases/latest/download/xync-linux-amd64.tar.gz.sha256
+sha256sum -c xync-linux-amd64.tar.gz.sha256
 ```
 
 > **Note:** The executable is self-contained and doesn't require Python to be installed. However, you still need `rsync` and `wget` installed on your system for mirror synchronization.
@@ -103,18 +103,18 @@ sha256sum -c xsync-linux-amd64.tar.gz.sha256
 
 ```bash
 # Clone the repo
-git clone https://github.com/xeon-dot/Xsync.git
-cd Xsync
+git clone https://github.com/xeon-dot/xync.git
+cd xync
 
 # Install with uv
 uv sync
 
 # Run directly
-uv run xsync --help
+uv run xync --help
 
 # Or install the entry-point globally
 uv tool install .
-xsync --help
+xync --help
 ```
 
 ---
@@ -123,42 +123,42 @@ xsync --help
 
 ```bash
 # 1. Initialise configuration
-xsync init
+xync init
 
 # 2. Add mirrors
-xsync mirror add ubuntu  rsync://mirror.kakao.com/ubuntu    /srv/mirrors/ubuntu
-xsync mirror add debian  http://ftp.debian.org/debian       /srv/mirrors/debian --type http
+xync mirror add ubuntu  rsync://mirror.kakao.com/ubuntu    /srv/mirrors/ubuntu
+xync mirror add debian  http://ftp.debian.org/debian       /srv/mirrors/debian --type http
 
 # 3. List mirrors
-xsync mirror list
+xync mirror list
 
 # 4. Sync all enabled mirrors
-xsync sync
+xync sync
 
 # 5. Check status
-xsync status
+xync status
 ```
 
 ---
 
 ## Commands
 
-### `xsync init`
+### `xync init`
 
-Initialise the Xsync configuration directory (`~/.config/xsync/`).
+Initialise the xync configuration directory (`~/.config/xync/`).
 
 ```shell
-xsync init [--config-dir PATH]
+xync init [--config-dir PATH]
 ```
 
 ---
 
-### `xsync mirror`
+### `xync mirror`
 
 #### `mirror add`
 
 ```shell
-xsync mirror add NAME URL LOCAL_PATH [OPTIONS]
+xync mirror add NAME URL LOCAL_PATH [OPTIONS]
 
 Options:
   --type       rsync | http | ftp          (default: rsync)
@@ -170,7 +170,7 @@ Options:
 #### `mirror remove`
 
 ```shell
-xsync mirror remove NAME [--yes]
+xync mirror remove NAME [--yes]
 ```
 
 #### `mirror list`
@@ -191,10 +191,10 @@ Show rsync dry-run diff for a mirror (what would change). Only works for rsync m
 
 ---
 
-### `xsync sync`
+### `xync sync`
 
 ```shell
-xsync sync [NAME ...] [--dry-run] [--verbose]
+xync sync [NAME ...] [--dry-run] [--verbose]
 ```
 
 Sync one or all enabled mirrors.
@@ -206,44 +206,44 @@ Sync one or all enabled mirrors.
 
 ---
 
-### `xsync status`
+### `xync status`
 
 ```shell
-xsync status [NAME ...]
+xync status [NAME ...]
 ```
 
 Show the last sync status, timestamp, and size for mirrors.
 
 ---
 
-### `xsync health`
+### `xync health`
 
 ```shell
-xsync health [NAME ...]
+xync health [NAME ...]
 ```
 
 Check configuration, required tools, mirror paths, and disk usage thresholds.
 
 ---
 
-### `xsync log NAME`
+### `xync log NAME`
 
 ```shell
-xsync log NAME [--lines N]
+xync log NAME [--lines N]
 ```
 
 Print the latest sync log for a mirror (default: last 50 lines).
 
 ---
 
-### `xsync daemon`
+### `xync daemon`
 
 Run background sync on a schedule.
 
 #### `daemon start [NAME ...]`
 
 ```shell
-xsync daemon start [OPTIONS]
+xync daemon start [OPTIONS]
 
 Options:
   --interval SECONDS   Sync interval (overrides daemon_interval config)
@@ -251,7 +251,7 @@ Options:
   --api-port PORT      API server port (overrides api_port config)
 ```
 
-Detaches from the terminal (double-fork). PID file at `{config_dir}/xsync-daemon.pid`.
+Detaches from the terminal (double-fork). PID file at `{config_dir}/xync-daemon.pid`.
 
 Supports two scheduling modes:
 - **Interval-based**: sleeps `daemon_interval` seconds between cycles (default: 3600)
@@ -260,7 +260,7 @@ Supports two scheduling modes:
 #### `daemon stop`
 
 ```shell
-xsync daemon stop [--force]
+xync daemon stop [--force]
 ```
 
 `--force` sends SIGKILL instead of SIGTERM.
@@ -275,17 +275,17 @@ Restart the daemon. Same options as `daemon start` plus `--force`.
 
 ---
 
-### `xsync api`
+### `xync api`
 
 Run a REST API server for monitoring.
 
 #### `api start`
 
 ```shell
-xsync api start [--port PORT]
+xync api start [--port PORT]
 ```
 
-Default port: `58080`. PID file at `{config_dir}/xsync-api.pid`.
+Default port: `58080`. PID file at `{config_dir}/xync-api.pid`.
 
 **Endpoints:**
 
@@ -299,7 +299,7 @@ Default port: `58080`. PID file at `{config_dir}/xsync-api.pid`.
 #### `api stop`
 
 ```shell
-xsync api stop [--force]
+xync api stop [--force]
 ```
 
 #### `api status`
@@ -308,19 +308,19 @@ Show whether the API server is running.
 
 ---
 
-### `xsync notify`
+### `xync notify`
 
 #### `notify test`
 
 ```shell
-xsync notify test [telegram|discord|all]
+xync notify test [telegram|discord|all]
 ```
 
 Send a test notification through configured channels.
 
 ---
 
-### `xsync config`
+### `xync config`
 
 #### `config show`
 
@@ -338,13 +338,13 @@ Validate the current configuration and report issues (checks tools, paths, Teleg
 
 ## Global Option
 
-All commands accept `--config-dir PATH` (or `XSYNC_CONFIG_DIR` env var) to use a non-default configuration directory.
+All commands accept `--config-dir PATH` (or `xync_CONFIG_DIR` env var) to use a non-default configuration directory.
 
 ---
 
 ## Configuration
 
-Config is stored at `~/.config/xsync/config.toml`:
+Config is stored at `~/.config/xync/config.toml`:
 
 ```toml
 version = 1
